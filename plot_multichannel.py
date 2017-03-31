@@ -5,7 +5,6 @@ Created on Dec 02, 2016
 '''
 
 import csv
-import struct
 import sys
 import numpy as np
 from scipy import signal
@@ -19,14 +18,14 @@ SAMPLING_RATE = 51.2
 DOWN_SAMPLE_FACTOR = 30
 MAX_Y = 20000
 BLINK_WINDOW = 20
-MEDIAN_SIZE = BLINK_WINDOW * 16 + 1
-
+POLY_FIT_WINDOW = 500
+MEDIAN_WINDOW = 21
 
 def main():
     reader = csv.reader(open(sys.argv[1], 'rb'))
     columns = list(zip(*reader))
 
-    figure = pyplot.figure(figsize=(15, 6))
+    figure = pyplot.figure(figsize=(15, 10))
 
     show_algo(columns, figure)
     # show_raw(columns, figure)
@@ -38,31 +37,18 @@ def main():
 
 def show_algo(columns, figure):
     channel1 = remove_drift(columns[0][1:])
-    channel2 = remove_drift(columns[1][1:])
-
-    # channel1 = remove_drift(columns[0][7000:9500])
-    # channel2 = remove_drift(columns[1][7000:9500])
-
-    # channel1 = signal.detrend(columns[0][7000:9500])
-    # channel2 = signal.detrend(columns[1][7000:9500])
-
-    # channel1 = median(channel1)
-    # channel2 = median(channel2)
-
-    channel1 = signal.medfilt(channel1, kernel_size=21)
-    channel2 = signal.medfilt(channel2, kernel_size=21)
-
-    # plot(figure, channel1, 'lightblue', 10000)
-    plot(figure, channel2, 'lightgreen', 10000)
-
+    channel1 = median(channel1)
+    plot(figure, 211, channel1, 'lightblue', 30000)
     # channel1 = diffdiff(channel1)
+    channel1 = diffdiff_filter(channel1, 150)
+    plot(figure, 211, channel1, 'blue', 30000)
+
+    channel2 = remove_drift(columns[1][1:])
+    channel2 = median(channel2)
+    plot(figure, 212, channel2, 'lightgreen', 30000)
     # channel2 = diffdiff(channel2)
-
-    # channel1 = diffdiff_filter(channel1, 150)
     channel2 = diffdiff_filter(channel2, 150)
-
-    # plot(figure, channel1, 'blue', 10000)
-    plot(figure, channel2, 'green', 10000)
+    plot(figure, 212, channel2, 'green', 30000)
 
 
 def show_filtered(columns, figure):
@@ -90,10 +76,6 @@ def show_raw(columns, figure):
 
     plot(figure, channel1, 'blue', 20000)
     plot(figure, channel2, 'green', 20000)
-
-
-def baseline(data):
-    return signal.medfilt(data, kernel_size=MEDIAN_SIZE)
 
 
 def diffdiff(data):
@@ -129,17 +111,17 @@ def diff(data):
 
 def median(data):
     filtered = [0]
-    for i in range(20, len(data)):
-        filtered.append(int(np.median(data[i-20:i])))
+    for i in range(MEDIAN_WINDOW, len(data)):
+        filtered.append(int(np.median(data[i - MEDIAN_WINDOW:i])))
     return filtered
 
 
 def remove_drift(data):
     filtered = []
-    for i in range(0, len(data) - 500, 500):
-        curve = get_curve(data[i:i+500])
+    for i in range(0, len(data) - POLY_FIT_WINDOW, POLY_FIT_WINDOW):
+        curve = get_curve(data[i:i + POLY_FIT_WINDOW])
         chunk = []
-        for j in range(i, i+500):
+        for j in range(i, i + POLY_FIT_WINDOW):
             value = int(data[j]) - np.polyval(curve, i + j)
             chunk.append(value)
         filtered.extend(signal.detrend(chunk))
@@ -157,18 +139,13 @@ def get_curve(data):
     return np.polyfit(x, y, 2)
 
 
-def plot(figure, channel, color, maxY=-1):
-    chart = figure.add_subplot(1, 1, 1)
+def plot(figure, id, channel, color, maxY=0):
+    chart = figure.add_subplot(id)
     chart.set_xticks(np.arange(0, len(channel), SAMPLING_RATE * 5))
     chart.plot(channel, linewidth=1, color=color)
-    if maxY > 0:
-        chart.axis([0, SAMPLING_RATE * 60, -maxY, maxY])
-    else:
-        chart.set_xlim([0, SAMPLING_RATE * 60])
-
-
-def rad_per_s(hertz):
-    return 2.0 * np.pi * hertz
+    chart.set_xbound([3000, 3000 + SAMPLING_RATE * 60])
+    if maxY:
+        chart.set_ybound([-maxY, maxY])
 
 
 if __name__ == "__main__":
