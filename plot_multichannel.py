@@ -16,6 +16,7 @@ DOWN_SAMPLE_FACTOR = 30
 POLY_FIT_WINDOW = 500
 MEDIAN_WINDOW = 20
 
+
 def main():
     reader = csv.reader(open(sys.argv[1], 'rb'))
     columns = list(zip(*reader))
@@ -33,29 +34,29 @@ def main():
 
 
 def show_algo_realtime(columns, figure):
-    maxY = 10000
+    max_y = 10000
     channel1 = np.array(columns[0][1:]).astype(np.int)
     channel11, channel12 = process_realtime(channel1, 200)
-    plot(figure, 211, channel11, 'lightblue', maxY)
-    plot(figure, 211, channel12, 'blue', maxY)
+    plot(figure, 211, channel11, 'lightblue', max_y)
+    plot(figure, 211, channel12, 'blue', max_y)
 
     channel2 = np.array(columns[1][1:]).astype(np.int)
     channel21, channel22 = process_realtime(channel2, 200)
-    plot(figure, 212, channel21, 'lightgreen', maxY)
-    plot(figure, 212, channel22, 'green', maxY)
+    plot(figure, 212, channel21, 'lightgreen', max_y)
+    plot(figure, 212, channel22, 'green', max_y)
 
 
 def show_algo_chunks(columns, figure):
-    maxY = 10000
+    max_y = 10000
     channel1 = np.array(columns[0][1:]).astype(np.int)
     channel11, channel12 = process_chunks(channel1, 150)
-    plot(figure, 211, channel11, 'lightblue', maxY)
-    plot(figure, 211, channel12, 'blue', maxY)
+    plot(figure, 211, channel11, 'lightblue', max_y)
+    plot(figure, 211, channel12, 'blue', max_y)
 
     channel2 = np.array(columns[1][1:]).astype(np.int)
     channel21, channel22 = process_chunks(channel2, 150)
-    plot(figure, 212, channel21, 'lightgreen', maxY)
-    plot(figure, 212, channel22, 'green', maxY)
+    plot(figure, 212, channel21, 'lightgreen', max_y)
+    plot(figure, 212, channel22, 'green', max_y)
 
 
 def show_algo(columns, figure):
@@ -124,6 +125,7 @@ def diffdiff_filter(data, cutoff):
         filtered.append(lastdata)
         lastdiff1 = diff1
     return filtered
+
 
 def diff(data):
     filtered = [0]
@@ -198,7 +200,6 @@ def process_realtime(data, cutoff):
     last_median = 0
     lastdiff1 = 0
     lastdata = 0
-    curve = None
     for i in range(0, len(data)):
         raw = raw[1:]
         raw.append(data[i])
