@@ -16,6 +16,8 @@ DOWN_SAMPLE_FACTOR = 30
 POLY_FIT_WINDOW = 500
 MEDIAN_WINDOW = 20
 
+START = int(SAMPLING_RATE * 15)  # Ignore first 15 seconds
+
 
 def main():
     reader = csv.reader(open(sys.argv[1], 'rb'))
@@ -23,10 +25,11 @@ def main():
 
     figure = pyplot.figure(figsize=(15, 10))
 
-    show_algo_realtime(columns, figure)
+    # show_algo_realtime(columns, figure)
     # show_algo_chunks(columns, figure)
     # show_algo(columns, figure)
-    # show_raw(columns, figure)
+    show_raw(columns, figure)
+    # show_detrend(columns, figure)
     # show_filtered(columns, figure)
     # show_raw_filtered(columns, figure)
 
@@ -35,71 +38,82 @@ def main():
 
 def show_algo_realtime(columns, figure):
     max_y = 10000
-    channel1 = np.array(columns[0][1:]).astype(np.int)
+    channel1 = np.array(columns[0][START:]).astype(np.int)
     channel11, channel12 = process_realtime(channel1, 200)
-    plot(figure, 211, channel11, 'lightblue', max_y)
-    plot(figure, 211, channel12, 'blue', max_y)
+    plot(figure, 211, channel11, 'lightblue', max_y=max_y, start=3000-START)
+    plot(figure, 211, channel12, 'blue', max_y=max_y, start=3000-START)
 
-    channel2 = np.array(columns[1][1:]).astype(np.int)
+    channel2 = np.array(columns[1][START:]).astype(np.int)
     channel21, channel22 = process_realtime(channel2, 200)
-    plot(figure, 212, channel21, 'lightgreen', max_y)
-    plot(figure, 212, channel22, 'green', max_y)
+    plot(figure, 212, channel21, 'lightgreen', max_y=max_y, start=3000-START)
+    plot(figure, 212, channel22, 'green', max_y=max_y, start=3000-START)
 
 
 def show_algo_chunks(columns, figure):
     max_y = 10000
-    channel1 = np.array(columns[0][1:]).astype(np.int)
+    channel1 = np.array(columns[0][START:]).astype(np.int)
     channel11, channel12 = process_chunks(channel1, 150)
-    plot(figure, 211, channel11, 'lightblue', max_y)
-    plot(figure, 211, channel12, 'blue', max_y)
+    plot(figure, 211, channel11, 'lightblue', max_y=max_y, start=3000-START)
+    plot(figure, 211, channel12, 'blue', max_y=max_y, start=3000-START)
 
-    channel2 = np.array(columns[1][1:]).astype(np.int)
+    channel2 = np.array(columns[1][START:]).astype(np.int)
     channel21, channel22 = process_chunks(channel2, 150)
-    plot(figure, 212, channel21, 'lightgreen', max_y)
-    plot(figure, 212, channel22, 'green', max_y)
+    plot(figure, 212, channel21, 'lightgreen', max_y=max_y, start=3000-START)
+    plot(figure, 212, channel22, 'green', max_y=max_y, start=3000-START)
 
 
 def show_algo(columns, figure):
-    channel1 = np.array(columns[0][1:]).astype(np.int)
+    max_y = 10000
+    channel1 = np.array(columns[0][START:]).astype(np.int)
     channel1 = remove_drift(channel1)
     channel1 = median_filter(channel1)
-    plot(figure, 211, channel1, 'lightblue', 10000)
+    plot(figure, 211, channel1, 'lightblue', max_y=max_y, start=3000-START)
     channel1 = diffdiff_filter(channel1, 150)
-    plot(figure, 211, channel1, 'blue', 10000)
+    plot(figure, 211, channel1, 'blue', max_y=max_y, start=3000-START)
 
-    channel2 = np.array(columns[1][1:]).astype(np.int)
+    channel2 = np.array(columns[1][START:]).astype(np.int)
     channel2 = remove_drift(channel2)
     channel2 = median_filter(channel2)
-    plot(figure, 212, channel2, 'lightgreen', 10000)
+    plot(figure, 212, channel2, 'lightgreen', max_y=max_y, start=3000-START)
     channel2 = diffdiff_filter(channel2, 150)
-    plot(figure, 212, channel2, 'green', 10000)
+    plot(figure, 212, channel2, 'green', max_y=max_y, start=3000-START)
 
 
 def show_filtered(columns, figure):
-    channel1 = columns[2][1:]
-    channel2 = columns[3][1:]
+    channel1 = columns[2][START:]
+    channel2 = columns[3][START:]
 
-    plot(figure, channel1, 'blue', 20000)
-    plot(figure, channel2, 'green', 20000)
+    plot(figure, 211, channel1, 'blue',  max_y=20000, start=3000-START)
+    plot(figure, 212, channel2, 'green',  max_y=20000, start=3000-START)
 
 
 def show_raw_filtered(columns, figure):
-    channel1 = signal.detrend(columns[0][1:])
-    channel2 = signal.detrend(columns[1][1:])
+    max_y = 20000
 
-    plot(figure, columns[2][1:], 'blue', 20000)
-    plot(figure, columns[3][1:], 'green', 20000)
+    channel1 = signal.detrend(columns[0][START:])
+    channel2 = signal.detrend(columns[1][START:])
 
-    plot(figure, channel1, 'lightblue', 200000)
-    plot(figure, channel2, 'lightgreen', 200000)
+    plot(figure, 211, columns[2][START:], 'blue',  max_y=max_y, start=3000-START)
+    plot(figure, 212, columns[3][START:], 'green',  max_y=max_y, start=3000-START)
+
+    plot(figure, 211, channel1, 'lightblue',  max_y=max_y, start=3000-START)
+    plot(figure, 212, channel2, 'lightgreen',  max_y=max_y, start=3000-START)
 
 
 def show_raw(columns, figure):
-    channel1 = signal.detrend(columns[0][1:])
-    channel2 = signal.detrend(columns[1][1:])
+    channel1 = columns[0][START:-50]
+    channel2 = columns[1][START:-50]
 
-    plot(figure, channel1, 'blue', 20000)
-    plot(figure, channel2, 'green', 20000)
+    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    plot(figure, 212, channel2, 'green', window=len(channel2))
+
+
+def show_detrend(columns, figure):
+    channel1 = signal.detrend(columns[0][START:-50])
+    channel2 = signal.detrend(columns[1][START:-50])
+
+    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    plot(figure, 212, channel2, 'green', window=len(channel2))
 
 
 def diffdiff(data):
@@ -223,11 +237,11 @@ def process_realtime(data, cutoff):
     return stage1, stage2
 
 
-def plot(figure, row_col, channel, color, max_y=0):
+def plot(figure, row_col, data, color, max_y=0, start=0, window=SAMPLING_RATE * 60):
     chart = figure.add_subplot(row_col)
-    chart.set_xticks(np.arange(0, len(channel), SAMPLING_RATE * 5))
-    chart.plot(channel, linewidth=1, color=color)
-    chart.set_xbound([3000, 3000 + SAMPLING_RATE * 60])
+    chart.set_xticks(np.arange(0, len(data), window / 15))
+    chart.plot(data, linewidth=1, color=color)
+    chart.set_xbound([start, start + window])
     if max_y:
         chart.set_ybound([-max_y, max_y])
 
