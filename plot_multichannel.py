@@ -36,19 +36,19 @@ def main():
 
 
 def show_algo(columns, figure):
-    channel1 = remove_drift(columns[0][1:])
+    channel1 = columns[0][1:]
+    channel1 = remove_drift(channel1)
     channel1 = median(channel1)
-    plot(figure, 211, channel1, 'lightblue', 30000)
-    # channel1 = diffdiff(channel1)
+    plot(figure, 211, channel1, 'lightblue', 10000)
     channel1 = diffdiff_filter(channel1, 150)
-    plot(figure, 211, channel1, 'blue', 30000)
+    plot(figure, 211, channel1, 'blue', 10000)
 
-    channel2 = remove_drift(columns[1][1:])
+    channel2 = columns[1][1:]
+    channel2 = remove_drift(channel2)
     channel2 = median(channel2)
-    plot(figure, 212, channel2, 'lightgreen', 30000)
-    # channel2 = diffdiff(channel2)
+    plot(figure, 212, channel2, 'lightgreen', 10000)
     channel2 = diffdiff_filter(channel2, 150)
-    plot(figure, 212, channel2, 'green', 30000)
+    plot(figure, 212, channel2, 'green', 10000)
 
 
 def show_filtered(columns, figure):
@@ -112,7 +112,7 @@ def diff(data):
 def median(data):
     filtered = [0]
     for i in range(MEDIAN_WINDOW, len(data)):
-        filtered.append(int(np.median(data[i - MEDIAN_WINDOW:i])))
+        filtered.append(int(np.median(np.array(data[i - MEDIAN_WINDOW:i]).astype(np.int))))
     return filtered
 
 
