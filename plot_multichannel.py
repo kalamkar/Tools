@@ -11,13 +11,8 @@ from scipy import signal
 from matplotlib import pyplot
 
 
-LOW_FREQ = 0.0625
-HIGH_FREQ = 1.024
-
 SAMPLING_RATE = 51.2
 DOWN_SAMPLE_FACTOR = 30
-MAX_Y = 20000
-BLINK_WINDOW = 20
 POLY_FIT_WINDOW = 500
 MEDIAN_WINDOW = 20
 
@@ -27,8 +22,8 @@ def main():
 
     figure = pyplot.figure(figsize=(15, 10))
 
-    # show_algo_realtime(columns, figure)
-    show_algo_chunks(columns, figure)
+    show_algo_realtime(columns, figure)
+    # show_algo_chunks(columns, figure)
     # show_algo(columns, figure)
     # show_raw(columns, figure)
     # show_filtered(columns, figure)
@@ -227,15 +222,13 @@ def process_realtime(data, cutoff):
     return stage1, stage2
 
 
-
-
-def plot(figure, id, channel, color, maxY=0):
-    chart = figure.add_subplot(id)
+def plot(figure, row_col, channel, color, max_y=0):
+    chart = figure.add_subplot(row_col)
     chart.set_xticks(np.arange(0, len(channel), SAMPLING_RATE * 5))
     chart.plot(channel, linewidth=1, color=color)
     chart.set_xbound([3000, 3000 + SAMPLING_RATE * 60])
-    if maxY:
-        chart.set_ybound([-maxY, maxY])
+    if max_y:
+        chart.set_ybound([-max_y, max_y])
 
 
 if __name__ == "__main__":
