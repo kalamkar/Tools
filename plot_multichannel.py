@@ -13,7 +13,7 @@ from matplotlib import pyplot
 
 SAMPLING_RATE = 51.2
 DOWN_SAMPLE_FACTOR = 30
-POLY_FIT_WINDOW = 50
+POLY_FIT_WINDOW = 10
 MEDIAN_WINDOW = 20
 
 START = int(SAMPLING_RATE * 15)  # Ignore first 15 seconds
@@ -117,11 +117,16 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    slope1 = get_slopes(raw1)[9000:9500]
-    slope2 = get_slopes(raw2)[9000:9500]
+    slice_start = 7000
+    slice_end = 9000
 
-    raw1 = signal.detrend(raw1)[9000:9500]
-    raw2 = signal.detrend(raw2)[9000:9500]
+    slope1 = get_slopes(raw1)[slice_start:slice_end]
+    slope2 = get_slopes(raw2)[slice_start:slice_end]
+
+    raw1 = signal.detrend(raw1)[slice_start:slice_end]
+    raw2 = signal.detrend(raw2)[slice_start:slice_end]
+    # raw1 = diffdiff(raw1, cutoff=2000)[slice_start:slice_end]
+    # raw2 = diffdiff(raw2, cutoff=2000)[slice_start:slice_end]
 
     plot(figure, 211, raw1, 'lightblue', window=len(raw1))
     plot(figure, 211, slope1, 'blue', window=len(slope1), twin=True)
@@ -151,14 +156,16 @@ def show_detrend(columns, figure):
     plot(figure, 212, channel2, 'green', start=3000-START)
 
 
-def diffdiff(data):
+def diffdiff(data, cutoff=0):
     lastdiff1 = data[1] - data[0]
     filtered = [0, lastdiff1]
+    lastdiff2 = 0
     for i in range(2, len(data)):
         diff1 = data[i] - data[i-1]
         diff2 = diff1 - lastdiff1
-        filtered.append(diff2)
+        filtered.append(diff2 if not cutoff or abs(diff2) > cutoff else 0)
         lastdiff1 = diff1
+        lastdiff2 = diff2 if not cutoff or abs(diff2) > cutoff else 0
     return filtered
 
 
@@ -227,6 +234,17 @@ def get_slopes(data):
     for i in range(POLY_FIT_WINDOW, len(data)):
         slope = get_slope(data[i - POLY_FIT_WINDOW:i])
         slopes.append(slope)
+    return slopes
+
+
+def get_slopes_with_memories(data):
+    slopes = [0] * POLY_FIT_WINDOW
+    memory = [0] * POLY_FIT_WINDOW
+    for i in range(POLY_FIT_WINDOW, len(data)):
+        slope = get_slope(data[i - POLY_FIT_WINDOW:i])
+        slopes.append(slope + memory[0])
+        memory = memory[1:]
+        memory.append(slope)
     return slopes
 
 
