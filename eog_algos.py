@@ -36,8 +36,8 @@ def show_slope(columns, figure):
     channel1, drifts1, thresholds1 = slopes(raw1)
     channel2, drifts2, thresholds2  = slopes(raw2)
 
-    slice_start = 0
-    slice_end = len(raw1)
+    slice_start = 6000
+    slice_end = 8000 # len(raw1)
 
     channel1 = channel1[slice_start:slice_end]
     channel2 = channel2[slice_start:slice_end]
@@ -46,27 +46,26 @@ def show_slope(columns, figure):
     thresholds1 = thresholds1[slice_start:slice_end]
     thresholds2 = thresholds2[slice_start:slice_end]
 
-    # raw1 = signal.detrend(raw1)
-    # raw2 = signal.detrend(raw2)
+    raw1 = signal.detrend(raw1)
+    raw2 = signal.detrend(raw2)
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
 
-    # plot(figure, 211, channel1, 'blue', window=len(channel1), max_y=1500)
-    plot(figure, 211, raw1, 'lightblue', window=len(raw1))
-    # plot(figure, 211, thresholds1, 'red', window=len(thresholds1), max_y=1500)
-    plot(figure, 211, drifts1, 'yellow', window=len(drifts1), twin=True, max_y=250, min_y=0)
+    plot(figure, 211, channel1, 'blue', window=len(channel1), max_y=1500)
+    plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
+    plot(figure, 211, thresholds1, 'red', window=len(thresholds1), max_y=1500)
+    # plot(figure, 211, drifts1, 'yellow', window=len(drifts1), twin=True, max_y=20, min_y=0)
 
-    # plot(figure, 212, channel2, 'green', window=len(channel2), max_y=1500)
-    plot(figure, 212, raw2, 'lightgreen', window=len(raw2))
-    # plot(figure, 212, thresholds2, 'red', window=len(thresholds2), max_y=1500)
-    plot(figure, 212, drifts2, 'yellow', window=len(drifts2), twin=True, max_y=250, min_y=0)
+    plot(figure, 212, channel2, 'green', window=len(channel2), max_y=1500)
+    plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
+    plot(figure, 212, thresholds2, 'red', window=len(thresholds2), max_y=1500)
+    # plot(figure, 212, drifts2, 'yellow', window=len(drifts2), twin=True, max_y=20, min_y=0)
 
 
-def slopes(data, slope_window_size=5, quality_window_size=50):
+def slopes(data, slope_window_size=5):
     stage2 = [0] * slope_window_size
 
     thresholds = []
-    quality_window = []
     slope_window = data[:slope_window_size - 1].tolist()
 
     drifts = [0] * len(data)
@@ -80,61 +79,14 @@ def slopes(data, slope_window_size=5, quality_window_size=50):
 
         drift_window = drift_window[1:]
         drift_window.append(data[i])
-        if i % 500 == 0:
+        if i % 100 == 0:
             current_drift = get_slope(drift_window)
-        percentile = max(90, 100 - math.sqrt(abs(current_drift)))
-        drifts[i] = abs(current_drift)
-
-        quality_window.append(slope)
-        if len(quality_window) > quality_window_size:
-            quality_window = quality_window[1:]
-        threshold = abs(int(np.percentile(quality_window, percentile)) * 2)
-
-        stage2.append(slope if abs(slope) > threshold else 0)
+        threshold = drifts[i] = max(400, current_drift * 2)
         thresholds.append(threshold)
 
+        stage2.append(slope if abs(slope) > abs(threshold) else 0)
+
     return stage2, drifts, thresholds
-
-
-def curvefit_median_diffdiff_data(data, cutoff, curvefit_size=500, median_size=20):
-    stage1 = []
-    stage2 = []
-    raw = [0] * curvefit_size
-    straight = [0] * median_size
-    prev_median = 0
-    prevdiff1 = 0
-    prevdata = 0
-    for i in range(0, len(data)):
-        raw = raw[1:]
-        raw.append(data[i])
-        curve = get_curve(raw, degree=1)
-
-        straight = straight[1:]
-        straight.append(raw[len(raw) - 1] - np.polyval(curve, len(raw)))
-
-        median = int(np.median(straight))
-        stage1.append(median)
-
-        diff1 = median - prev_median
-        diff2 = diff1 - prevdiff1
-        if abs(diff2) > cutoff:
-            prevdata = median
-        stage2.append(prevdata)
-
-        prev_median = median
-        prevdiff1 = diff1
-
-    return stage2, stage1
-
-
-def get_curve(data, degree=2):
-    x = []
-    y = []
-    for i in range(0, len(data)):
-        if i % 30 == 0:
-            x.append(i)
-            y.append(data[i])
-    return np.polyfit(x, y, degree)
 
 
 def get_slope(data):
