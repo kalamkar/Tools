@@ -6,7 +6,6 @@ Created on Dec 02, 2016
 
 import csv
 import sys
-import math
 import numpy as np
 import time
 from scipy import signal
@@ -33,16 +32,18 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    slopes1, slope_slopes1, thresholds1 = slopes(raw1)
-    slopes2, slope_slopes2, thresholds2 = slopes(raw2)
+    slopes1, slope_slopes1, filtered1 = get_slopes(raw1)
+    slopes2, slope_slopes2, filtered2 = get_slopes(raw2)
 
-    slice_start = 3000
+    slice_start = 7000
     slice_end = 9000  # len(raw1)
 
     slopes1 = slopes1[slice_start:slice_end]
     slopes2 = slopes2[slice_start:slice_end]
     slope_slopes1 = slope_slopes1[slice_start:slice_end]
     slope_slopes2 = slope_slopes2[slice_start:slice_end]
+    filtered1 = filtered1[slice_start:slice_end]
+    filtered2 = filtered2[slice_start:slice_end]
 
     raw1 = signal.detrend(raw1)
     raw2 = signal.detrend(raw2)
@@ -50,24 +51,29 @@ def show_slope(columns, figure):
     raw2 = raw2[slice_start:slice_end]
 
     # plot(figure, 211, channel1, 'blue', window=len(slopes1))
-    plot(figure, 211, slope_slopes1, 'blue', window=len(slopes1))
+    # plot(figure, 211, slope_slopes1, 'red', window=len(slopes1))
+    plot(figure, 211, filtered1, 'blue', window=len(filtered1))
     plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
 
     # plot(figure, 212, slopes2, 'green', window=len(slopes2))
-    plot(figure, 212, slope_slopes2, 'green', window=len(slopes2))
+    # plot(figure, 212, slope_slopes2, 'red', window=len(slopes2))
+    plot(figure, 212, filtered2, 'green', window=len(filtered2))
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
-def slopes(data, slope_window_size=5):
+def get_slopes(data, slope_window_size=5):
     slopes = [0] * slope_window_size
     slope_slopes = [0] * slope_window_size
+    filtered = [0] * slope_window_size
 
     thresholds = []
     slope_window = data[:slope_window_size - 1].tolist()
     slope_slope_window = [0] * slope_window_size
 
-    drift_window = [0] * 1000
+    drift_window = [0] * 5000
+    threshold = 0
     current_drift = 0
+    count_since_drift_update = 0
 
     for i in range(slope_window_size, len(data)):
         slope_window = slope_window[1:]
@@ -81,14 +87,27 @@ def slopes(data, slope_window_size=5):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
         if i % 100 == 0:
-            current_drift = abs(get_slope(drift_window))
-        threshold = max(400, current_drift * 2)
+            threshold = max(400, abs(get_slope(drift_window)) * 2)
         thresholds.append(threshold)
 
         slopes.append(slope if abs(slope) > abs(threshold) else 0)
-        slope_slopes.append(slope_slope if abs(slope_slope) > 100 else 0)
 
-    return slopes, slope_slopes, thresholds
+        if abs(slope_slope) > 100:
+            slope_slopes.append(slope_slope)
+            count_since_drift_update = 0
+            current_drift = get_slope(drift_window)
+        else:
+            slope_slopes.append(0)
+            count_since_drift_update += 1
+
+        if abs(slope_slope) > 100:
+            value = data[i] - (count_since_drift_update * current_drift)
+            filtered.append(value)
+        else:
+            filtered.append(filtered[i-1])
+
+
+    return slopes, slope_slopes, filtered
 
 
 def get_slope(data):
