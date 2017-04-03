@@ -33,42 +33,39 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    channel1, drifts1, thresholds1 = slopes(raw1)
-    channel2, drifts2, thresholds2  = slopes(raw2)
+    slopes1, slope_slopes1, thresholds1 = slopes(raw1)
+    slopes2, slope_slopes2, thresholds2 = slopes(raw2)
 
-    slice_start = 0
-    slice_end = len(raw1)
+    slice_start = 3000
+    slice_end = 9000  # len(raw1)
 
-    channel1 = channel1[slice_start:slice_end]
-    channel2 = channel2[slice_start:slice_end]
-    drifts1 = drifts1[slice_start:slice_end]
-    drifts2 = drifts2[slice_start:slice_end]
-    thresholds1 = thresholds1[slice_start:slice_end]
-    thresholds2 = thresholds2[slice_start:slice_end]
+    slopes1 = slopes1[slice_start:slice_end]
+    slopes2 = slopes2[slice_start:slice_end]
+    slope_slopes1 = slope_slopes1[slice_start:slice_end]
+    slope_slopes2 = slope_slopes2[slice_start:slice_end]
 
     raw1 = signal.detrend(raw1)
     raw2 = signal.detrend(raw2)
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
 
-    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    # plot(figure, 211, channel1, 'blue', window=len(slopes1))
+    plot(figure, 211, slope_slopes1, 'blue', window=len(slopes1))
     plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
-    plot(figure, 211, thresholds1, 'red', window=len(thresholds1), max_y=1500)
-    # plot(figure, 211, drifts1, 'yellow', window=len(drifts1), twin=True, max_y=20, min_y=0)
 
-    plot(figure, 212, channel2, 'green', window=len(channel2))
+    # plot(figure, 212, slopes2, 'green', window=len(slopes2))
+    plot(figure, 212, slope_slopes2, 'green', window=len(slopes2))
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
-    plot(figure, 212, thresholds2, 'red', window=len(thresholds2), max_y=1500)
-    # plot(figure, 212, drifts2, 'yellow', window=len(drifts2), twin=True, max_y=20, min_y=0)
 
 
 def slopes(data, slope_window_size=5):
-    stage2 = [0] * slope_window_size
+    slopes = [0] * slope_window_size
+    slope_slopes = [0] * slope_window_size
 
     thresholds = []
     slope_window = data[:slope_window_size - 1].tolist()
+    slope_slope_window = [0] * slope_window_size
 
-    drifts = [0] * len(data)
     drift_window = [0] * 1000
     current_drift = 0
 
@@ -77,16 +74,21 @@ def slopes(data, slope_window_size=5):
         slope_window.append(data[i])
         slope = get_slope(slope_window)
 
+        slope_slope_window = slope_slope_window[1:]
+        slope_slope_window.append(slope)
+        slope_slope = get_slope(slope_slope_window)
+
         drift_window = drift_window[1:]
         drift_window.append(data[i])
         if i % 100 == 0:
             current_drift = abs(get_slope(drift_window))
-        threshold = drifts[i] = max(400, current_drift * 2)
+        threshold = max(400, current_drift * 2)
         thresholds.append(threshold)
 
-        stage2.append(slope if abs(slope) > abs(threshold) else 0)
+        slopes.append(slope if abs(slope) > abs(threshold) else 0)
+        slope_slopes.append(slope_slope if abs(slope_slope) > 100 else 0)
 
-    return stage2, drifts, thresholds
+    return slopes, slope_slopes, thresholds
 
 
 def get_slope(data):
