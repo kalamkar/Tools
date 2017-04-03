@@ -36,8 +36,8 @@ def show_slope(columns, figure):
     channel1, drifts1, thresholds1 = slopes(raw1)
     channel2, drifts2, thresholds2  = slopes(raw2)
 
-    slice_start = 6000
-    slice_end = 8000 # len(raw1)
+    slice_start = 0
+    slice_end = len(raw1)
 
     channel1 = channel1[slice_start:slice_end]
     channel2 = channel2[slice_start:slice_end]
@@ -51,12 +51,12 @@ def show_slope(columns, figure):
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
 
-    plot(figure, 211, channel1, 'blue', window=len(channel1), max_y=1500)
+    plot(figure, 211, channel1, 'blue', window=len(channel1))
     plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
     plot(figure, 211, thresholds1, 'red', window=len(thresholds1), max_y=1500)
     # plot(figure, 211, drifts1, 'yellow', window=len(drifts1), twin=True, max_y=20, min_y=0)
 
-    plot(figure, 212, channel2, 'green', window=len(channel2), max_y=1500)
+    plot(figure, 212, channel2, 'green', window=len(channel2))
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
     plot(figure, 212, thresholds2, 'red', window=len(thresholds2), max_y=1500)
     # plot(figure, 212, drifts2, 'yellow', window=len(drifts2), twin=True, max_y=20, min_y=0)
@@ -80,7 +80,7 @@ def slopes(data, slope_window_size=5):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
         if i % 100 == 0:
-            current_drift = get_slope(drift_window)
+            current_drift = abs(get_slope(drift_window))
         threshold = drifts[i] = max(400, current_drift * 2)
         thresholds.append(threshold)
 
