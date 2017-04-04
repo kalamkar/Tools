@@ -32,10 +32,10 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    slopes1, slope_slopes1, filtered1 = filter_drift(raw1)
-    slopes2, slope_slopes2, filtered2 = filter_drift(raw2)
+    slopes1, slope_slopes1, filtered1 = filter_drift_slopes(raw1)
+    slopes2, slope_slopes2, filtered2 = filter_drift_slopes(raw2)
 
-    slice_start = 0
+    slice_start = 20
     slice_end = len(raw1)
 
     slopes1 = slopes1[slice_start:slice_end]
@@ -45,8 +45,8 @@ def show_slope(columns, figure):
     filtered1 = filtered1[slice_start:slice_end]
     filtered2 = filtered2[slice_start:slice_end]
 
-    # raw1 = signal.detrend(raw1)
-    # raw2 = signal.detrend(raw2)
+    raw1 = signal.detrend(raw1)
+    raw2 = signal.detrend(raw2)
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
 
@@ -59,6 +59,45 @@ def show_slope(columns, figure):
     # plot(figure, 212, slope_slopes2, 'red', window=len(slopes2))
     plot(figure, 212, filtered2, 'green', window=len(filtered2))
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
+
+
+def filter_drift_slopes(data, slope_window_size=5, drift_window_size=1000, update_count=1000):
+    filtered = []
+
+    slope_window = data[:slope_window_size - 1].tolist()
+    slope_slope_window = [0] * slope_window_size
+
+    drift_window = [0] * drift_window_size
+    current_drift = 0
+    count_since_drift_update = 0
+    adjustment = data[0]
+
+    for i in range(0, len(data)):
+        drift_window = drift_window[1:]
+        drift_window.append(data[i])
+        if i != 0 and i % update_count == 0:
+            previous_drift = current_drift
+            current_drift = get_slope(drift_window)
+
+            old_value = data[i] - (count_since_drift_update * previous_drift)
+            new_value = data[i] - (0 * current_drift)
+            adjustment += old_value - new_value
+
+            count_since_drift_update = 0
+        else:
+            count_since_drift_update += 1
+
+        slope_window = slope_window[1:]
+        slope_window.append(data[i])
+        slope = get_slope(slope_window)
+
+        if abs(slope) > 400:
+            value = data[i] - (count_since_drift_update * current_drift) + adjustment
+            filtered.append(value)
+        else:
+            filtered.append(filtered[i - 1] if i > 0 else 0)
+
+    return [], [], filtered
 
 
 def filter_drift(data, slope_window_size=1000, update_count=1000):
