@@ -32,15 +32,16 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    filtered1, baselines1 = filter_drift_slopes(raw1)
-    filtered2, baselines2 = filter_drift_slopes(raw2)
+    filtered1, markers1 = filter_drift(raw1)
+    filtered2, markers2 = filter_drift(raw2)
 
-    slice_start = 7000
-    slice_end = 9000  # len(raw1)
+    slice_start = 10
+    slice_end = len(raw1) - 10
 
-    # markers1 = markers2 = []
-    markers1 = baselines1[slice_start:slice_end]
-    markers2 = baselines2[slice_start:slice_end]
+    markers1 = markers2 = []
+    # markers1 = markers1[slice_start:slice_end]
+    # markers2 = markers2[slice_start:slice_end]
+    # channel1 = channel2 = []
     channel1 = filtered1[slice_start:slice_end]
     channel2 = filtered2[slice_start:slice_end]
 
@@ -58,7 +59,8 @@ def show_slope(columns, figure):
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
-def filter_drift_slopes(data, slope_window_size=5, drift_window_size=1000, update_count=1000):
+def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update_count=500):
+    slopes = []
     filtered = []
 
     slope_window = data[:slope_window_size - 1].tolist()
@@ -72,12 +74,15 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=1000, updat
     baselines = []
     baseline = 0
 
+    threshold = 400
+
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
         if i != 0 and i % update_count == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
+            threshold = max(400, abs(current_drift) * 2)
 
             baseline = get_baseline(drift_window)
 
@@ -93,18 +98,20 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=1000, updat
         slope_window.append(data[i])
         slope = get_slope(slope_window)
 
-        if abs(slope) > 400:
+        if abs(slope) > threshold:
             value = data[i] - (count_since_drift_update * current_drift) + adjustment
             filtered.append(value)
+            slopes.append(slope)
         else:
             filtered.append(filtered[i - 1] if i > 0 else 0)
+            slopes.append(0)
 
         baselines.append(baseline - ((count_since_drift_update + drift_window_size / 2) * current_drift) + adjustment)
 
-    return filtered, baselines
+    return filtered, slopes
 
 
-def filter_drift(data, slope_window_size=1000, update_count=1000):
+def filter_drift(data, slope_window_size=500, update_count=500):
     filtered = []
 
     drift_window = [0] * slope_window_size
@@ -130,11 +137,10 @@ def filter_drift(data, slope_window_size=1000, update_count=1000):
         value = data[i] - (count_since_drift_update * current_drift) + adjustment
         filtered.append(value)
 
-
     return filtered, []
 
 
-def get_slopes(data, slope_window_size=5):
+def filter_slopes(data, slope_window_size=5):
     slopes = [0] * slope_window_size
     slope_slopes = [0] * slope_window_size
     filtered = [0] * slope_window_size
@@ -163,7 +169,10 @@ def get_slopes(data, slope_window_size=5):
             threshold = max(400, abs(get_slope(drift_window)) * 2)
         thresholds.append(threshold)
 
-        slopes.append(slope if abs(slope) > abs(threshold) else 0)
+        if abs(slope) > abs(threshold):
+            slopes.append(slope)
+        else:
+            slopes.append(0)
 
         if abs(slope_slope) > 100:
             slope_slopes.append(slope_slope)
@@ -197,6 +206,9 @@ def get_baseline(data):
 
 
 def plot(figure, row_col, data, color, max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
+    if len(data) == 0:
+        return
+
     chart = figure.add_subplot(row_col)
     if twin:
         chart = chart.twinx()
