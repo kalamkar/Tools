@@ -32,32 +32,29 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    slopes1, slope_slopes1, filtered1 = filter_drift_slopes(raw1)
-    slopes2, slope_slopes2, filtered2 = filter_drift_slopes(raw2)
+    filtered1, baselines1 = filter_drift_slopes(raw1)
+    filtered2, baselines2 = filter_drift_slopes(raw2)
 
-    slice_start = 20
-    slice_end = len(raw1)
+    slice_start = 7000
+    slice_end = 9000  # len(raw1)
 
-    slopes1 = slopes1[slice_start:slice_end]
-    slopes2 = slopes2[slice_start:slice_end]
-    slope_slopes1 = slope_slopes1[slice_start:slice_end]
-    slope_slopes2 = slope_slopes2[slice_start:slice_end]
-    filtered1 = filtered1[slice_start:slice_end]
-    filtered2 = filtered2[slice_start:slice_end]
+    # markers1 = markers2 = []
+    markers1 = baselines1[slice_start:slice_end]
+    markers2 = baselines2[slice_start:slice_end]
+    channel1 = filtered1[slice_start:slice_end]
+    channel2 = filtered2[slice_start:slice_end]
 
     raw1 = signal.detrend(raw1)
     raw2 = signal.detrend(raw2)
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
 
-    # plot(figure, 211, channel1, 'blue', window=len(slopes1))
-    # plot(figure, 211, slope_slopes1, 'red', window=len(slopes1))
-    plot(figure, 211, filtered1, 'blue', window=len(filtered1))
+    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    plot(figure, 211, markers1, 'red', window=len(markers1))
     plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
 
-    # plot(figure, 212, slopes2, 'green', window=len(slopes2))
-    # plot(figure, 212, slope_slopes2, 'red', window=len(slopes2))
-    plot(figure, 212, filtered2, 'green', window=len(filtered2))
+    plot(figure, 212, channel2, 'green', window=len(channel2))
+    plot(figure, 212, markers2, 'red', window=len(markers2))
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
@@ -72,12 +69,17 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=1000, updat
     count_since_drift_update = 0
     adjustment = data[0]
 
+    baselines = []
+    baseline = 0
+
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
         if i != 0 and i % update_count == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
+
+            baseline = get_baseline(drift_window)
 
             old_value = data[i] - (count_since_drift_update * previous_drift)
             new_value = data[i] - (0 * current_drift)
@@ -97,7 +99,9 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=1000, updat
         else:
             filtered.append(filtered[i - 1] if i > 0 else 0)
 
-    return [], [], filtered
+        baselines.append(baseline - ((count_since_drift_update + drift_window_size / 2) * current_drift) + adjustment)
+
+    return filtered, baselines
 
 
 def filter_drift(data, slope_window_size=1000, update_count=1000):
@@ -127,7 +131,7 @@ def filter_drift(data, slope_window_size=1000, update_count=1000):
         filtered.append(value)
 
 
-    return [], [], filtered
+    return filtered, []
 
 
 def get_slopes(data, slope_window_size=5):
@@ -175,8 +179,7 @@ def get_slopes(data, slope_window_size=5):
         else:
             filtered.append(filtered[i-1])
 
-
-    return slopes, slope_slopes, filtered
+    return filtered, slope_slopes
 
 
 def get_slope(data):
@@ -184,6 +187,13 @@ def get_slope(data):
     start = int(np.median(data[:median_size]))
     end = int(np.median(data[-median_size:]))
     return (end - start) / len(data)
+
+
+def get_baseline(data):
+    median_size = max(1, len(data) / 20)  # 5%
+    start = int(np.median(data[:median_size]))
+    end = int(np.median(data[-median_size:]))
+    return (end + start) / 2
 
 
 def plot(figure, row_col, data, color, max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
