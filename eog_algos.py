@@ -59,7 +59,7 @@ def show_slope(columns, figure):
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
-def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update_count=500):
+def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update_interval=500):
     slopes = []
     filtered = []
 
@@ -79,16 +79,13 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
-        if i != 0 and i % update_count == 0:
+        if i != 0 and i % update_interval == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
             threshold = max(400, abs(current_drift) * 2)
+            adjustment -= update_interval * previous_drift
 
             baseline = get_baseline(drift_window)
-
-            old_value = data[i] - (count_since_drift_update * previous_drift)
-            new_value = data[i] - (0 * current_drift)
-            adjustment += old_value - new_value
 
             count_since_drift_update = 0
         else:
@@ -125,10 +122,7 @@ def filter_drift(data, drift_window_size=500, update_interval=500):
         if i != 0 and i % update_interval == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
-
-            old_value = data[i] - (count_since_drift_update * previous_drift)
-            new_value = data[i] - (0 * current_drift)
-            adjustment += old_value - new_value
+            adjustment -= update_interval * previous_drift
 
             count_since_drift_update = 0
         else:
