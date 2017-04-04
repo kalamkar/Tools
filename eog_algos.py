@@ -111,18 +111,18 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update
     return filtered, slopes
 
 
-def filter_drift(data, slope_window_size=500, update_count=500):
+def filter_drift(data, drift_window_size=500, update_interval=500):
     filtered = []
 
-    drift_window = [0] * slope_window_size
+    drift_window = [0] * drift_window_size
     current_drift = 0
     count_since_drift_update = 0
-    adjustment = data[0]
+    adjustment = 0
 
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
-        if i != 0 and i % update_count == 0:
+        if i != 0 and i % update_interval == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
 
