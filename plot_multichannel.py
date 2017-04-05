@@ -6,6 +6,7 @@ Created on Dec 02, 2016
 
 import csv
 import sys
+import math
 import numpy as np
 from scipy import signal
 from matplotlib import pyplot
@@ -249,10 +250,186 @@ def get_slopes_with_memories(data):
 
 
 def get_slope(data):
-    median_size = max(1, POLY_FIT_WINDOW / 20) # 5%
+    if len(data) < 2:
+        return 0
+    median_size = max(1, len(data) / 20)  # 5%
+
     start = int(np.median(data[:median_size]))
     end = int(np.median(data[-median_size:]))
-    return float((end - start) / len(data))
+    return (end - start) / (len(data) - 1)
+
+
+def get_continuous_slope(data):
+    if len(data) < 2:
+        return 0
+    slopes = []
+    for i in range(1, len(data)):
+        slopes.append(data[i] - data[i-1])
+    return np.median(slopes)
+
+
+def filter_drift_slopes_flats(data, slope_window_size=5, threshold_multiplier=200, drift_window_size=500):
+    slopes = []
+    filtered = []
+
+    slope_window = data[:slope_window_size].tolist()
+
+    window_for_thresholds = [0] * drift_window_size
+    threshold = 400
+
+    current_drift = 0
+    adjustment = 0
+
+    featureless = []
+
+    for i in range(0, len(data)):
+        slope_window = slope_window[1:]
+        slope_window.append(data[i])
+        slope = get_slope(slope_window)
+
+        window_for_thresholds = window_for_thresholds[1:]
+        window_for_thresholds.append(data[i])
+
+        if i % drift_window_size == 0:
+            long_slope = get_slope(window_for_thresholds)
+            try:
+                threshold = math.log10(abs(long_slope)) * threshold_multiplier
+            except ValueError:
+                pass
+
+        if abs(slope) > abs(threshold):
+            if len(featureless) > 100:
+                previous_drift = current_drift
+                current_drift = get_continuous_slope(featureless)
+                old_value = data[i] - (i * previous_drift) + adjustment
+                new_value = data[i] - (i * current_drift) + adjustment
+                adjustment -= new_value - old_value
+
+            filtered.append(data[i] - (i * current_drift) + adjustment)
+            slopes.append(slope)
+
+            featureless = []
+        else:
+            filtered.append(filtered[i - 1] if i > 0 else 0)
+            slopes.append(0)
+
+            featureless.append(data[i])
+
+    return filtered, slopes
+
+
+def filter_drift_slopes_fixed(data, slope_window_size=5, drift_window_size=500,
+                              update_interval=500, threshold_multiplier=200):
+    slopes = []
+    filtered = []
+
+    slope_window = data[:slope_window_size].tolist()
+
+    drift_window = [0] * drift_window_size
+    current_drift = 0
+    adjustment = 0
+    threshold = 400
+
+    mins = []
+    maxs = []
+    count_since_update = 0
+    calibration_window = [0] * drift_window_size
+    prev_min = data[0]
+    prev_max = data[0]
+
+    for i in range(0, len(data)):
+        drift_window = drift_window[1:]
+        drift_window.append(data[i])
+        if i != 0 and i % update_interval == 0:
+            previous_drift = current_drift
+            current_drift = get_slope(drift_window)
+
+            threshold = math.log10(abs(current_drift)) * threshold_multiplier
+
+            old_value = data[i] - (i * previous_drift) + adjustment
+            new_value = data[i] - (i * current_drift) + adjustment
+            adjustment -= new_value - old_value
+
+        value = data[i] - (i * current_drift) + adjustment
+        calibration_window = calibration_window[1:]
+        calibration_window.append(value)
+
+        if i != 0 and i % update_interval == 0:
+            prev_min = int(min(calibration_window))
+            prev_max = int(max(calibration_window))
+
+            count_since_update = 0
+        else:
+            count_since_update += 1
+
+        maxs.append(prev_max)  # - (count_since_update * current_drift) + adjustment)
+        mins.append(prev_min)  # - (count_since_update * current_drift) + adjustment)
+
+        slope_window = slope_window[1:]
+        slope_window.append(data[i])
+        slope = get_slope(slope_window)
+
+        if abs(slope) > abs(threshold):
+            filtered.append(value)
+            slopes.append(slope)
+        else:
+            filtered.append(filtered[i - 1] if i > 0 else 0)
+            slopes.append(0)
+
+    return filtered, [maxs, mins]
+
+
+def filter_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500):
+    slopes = [0] * slope_window_size
+    slope_slopes = [0] * slope_window_size
+    filtered = [0] * slope_window_size
+
+    thresholds = []
+    slope_window = data[:slope_window_size].tolist()
+    slope_slope_window = [0] * slope_window_size
+
+    window_for_thresholds = [0] * drift_window_size
+    threshold = 0
+    current_drift = 0
+    count_since_drift_update = 0
+
+    for i in range(slope_window_size, len(data)):
+        slope_window = slope_window[1:]
+        slope_window.append(data[i])
+        slope = get_slope(slope_window)
+
+        slope_slope_window = slope_slope_window[1:]
+        slope_slope_window.append(slope)
+        slope_slope = get_slope(slope_slope_window)
+
+        window_for_thresholds = window_for_thresholds[1:]
+        window_for_thresholds.append(data[i])
+
+        if i % drift_window_size == 0:
+            long_slope = get_slope(window_for_thresholds)
+            threshold = math.log10(abs(long_slope)) * threshold_multiplier
+        thresholds.append(threshold)
+
+        if abs(slope) > abs(threshold):
+            slopes.append(slope)
+        else:
+            slopes.append(0)
+
+        if abs(slope_slope) > threshold:
+            slope_slopes.append(slope_slope)
+            count_since_drift_update = 0
+            current_drift = get_slope(window_for_thresholds)
+        else:
+            slope_slopes.append(0)
+            count_since_drift_update += 1
+
+        if abs(slope_slope) > 100:
+            value = data[i] - (count_since_drift_update * current_drift)
+            filtered.append(value)
+        else:
+            filtered.append(filtered[i-1])
+
+    return filtered, slopes
 
 
 def process_chunks(data, cutoff):
