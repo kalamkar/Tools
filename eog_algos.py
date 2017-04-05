@@ -40,7 +40,7 @@ def show_slope(columns, figure):
     filtered1, [markers11, markers12], blink_points1 = filter_drift(raw1)
     filtered2, [markers21, markers22], blink_points2 = filter_drift(raw2)
 
-    slice_start = 10
+    slice_start = 3000
     slice_end = len(raw1) - 10
 
     blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points1]
@@ -49,12 +49,12 @@ def show_slope(columns, figure):
     blink_values2 = [filtered2[i] for i in blink_points2]
 
     # markers11 = markers21 = []
-    # markers11 = markers11[slice_start:slice_end]
-    # markers21 = markers21[slice_start:slice_end]
+    markers11 = markers11[slice_start:slice_end]
+    markers21 = markers21[slice_start:slice_end]
 
     # markers12 = markers22 = []
-    # markers12 = markers12[slice_start:slice_end]
-    # markers22 = markers22[slice_start:slice_end]
+    markers12 = markers12[slice_start:slice_end]
+    markers22 = markers22[slice_start:slice_end]
 
     # channel1 = channel2 = []
     channel1 = filtered1[slice_start:slice_end]
@@ -73,14 +73,14 @@ def show_slope(columns, figure):
     plot(figure, 211, markers12, 'yellow', window=len(markers12))
     # plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
     plot(figure, 211, col, 'lightblue', window=len(col), twin=True, min_y=-2, max_y=5)
-    plot(figure, 211, blink_values1, 'orange', x=blink_points1, window=len(channel1))
+    # plot(figure, 211, blink_values1, 'orange', x=blink_points1, window=len(channel1))
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
     plot(figure, 212, markers21, 'orange', window=len(markers21))
     plot(figure, 212, markers22, 'yellow', window=len(markers22))
     # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
-    plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
+    # plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
 
 
 def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_size=30):
@@ -94,6 +94,11 @@ def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_
 
     blink_window = [0] * blink_window_size
     blink_skip_window = 0
+
+    baseline = []
+    count_since_calibration_update = 0
+    calibration_window = [0] * drift_window_size
+    prev_base = data[0]
 
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
@@ -110,6 +115,17 @@ def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_
         value = data[i] - (count_since_drift_update * current_drift) + adjustment
         filtered.append(value)
 
+        calibration_window = calibration_window[1:]
+        calibration_window.append(value)
+
+        if i != 0 and i % 100 == 0:
+            prev_base = int(np.median(calibration_window))
+            count_since_calibration_update = 0
+        else:
+            count_since_calibration_update += 1
+
+        baseline.append(prev_base) # - (count_since_calibration_update * current_drift))
+
         blink_window = blink_window[1:]
         blink_window.append(value)
         if blink_skip_window <= 0:
@@ -120,7 +136,11 @@ def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_
         else:
             blink_skip_window -= 1
 
-    return filtered, [[], []], blinks
+    maxs = [i + 5000 for i in baseline]
+    mins = [i - 5000 for i in baseline]
+
+    # TODO(abhi) Get baseline by ignoring the features, whatever that means
+    return filtered, [maxs, mins], blinks
 
 
 def get_slope(data):
@@ -130,7 +150,7 @@ def get_slope(data):
 
     start = int(np.median(data[:median_size]))
     end = int(np.median(data[-median_size:]))
-    return (end - start) / (len(data) - 1)
+    return float((end - start) / (len(data) - 1))
 
 
 def get_continuous_slope(data):
