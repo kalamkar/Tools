@@ -6,6 +6,7 @@ Created on Dec 02, 2016
 
 import csv
 import sys
+import math
 import numpy as np
 import time
 from scipy import signal
@@ -35,7 +36,7 @@ def show_slope(columns, figure):
     filtered1, markers1 = filter_drift_slopes_fixed(raw1)
     filtered2, markers2 = filter_drift_slopes_fixed(raw2)
 
-    slice_start = 1000
+    slice_start = 10
     slice_end = len(raw1) - 10
 
     markers1 = markers2 = []
@@ -51,19 +52,22 @@ def show_slope(columns, figure):
     raw2 = raw2[slice_start:slice_end]
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
-    plot(figure, 211, markers1, 'red', window=len(markers1))
+    plot(figure, 211, markers1, 'red', window=len(markers1), min_y=-1500, max_y=1500)
     plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
-    plot(figure, 212, markers2, 'red', window=len(markers2))
+    plot(figure, 212, markers2, 'red', window=len(markers2), min_y=-1500, max_y=1500)
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
-def filter_drift_slopes_flats(data, slope_window_size=5):
+def filter_drift_slopes_flats(data, slope_window_size=5, threshold_multiplier=200, drift_window_size=500):
     slopes = []
     filtered = []
 
-    slope_window = data[:slope_window_size - 1].tolist()
+    slope_window = data[:slope_window_size].tolist()
+
+    window_for_thresholds = [0] * drift_window_size
+    threshold = 400
 
     current_drift = 0
     adjustment = 0
@@ -75,7 +79,17 @@ def filter_drift_slopes_flats(data, slope_window_size=5):
         slope_window.append(data[i])
         slope = get_slope(slope_window)
 
-        if abs(slope) > 400:
+        window_for_thresholds = window_for_thresholds[1:]
+        window_for_thresholds.append(data[i])
+
+        if i % drift_window_size == 0:
+            long_slope = get_slope(window_for_thresholds)
+            try:
+                threshold = math.log10(abs(long_slope)) * threshold_multiplier
+            except ValueError:
+                pass
+
+        if abs(slope) > abs(threshold):
             if len(featureless) > 100:
                 previous_drift = current_drift
                 current_drift = get_continuous_slope(featureless)
@@ -97,16 +111,16 @@ def filter_drift_slopes_flats(data, slope_window_size=5):
 
 
 def filter_drift_slopes_fixed(data, slope_window_size=5, drift_window_size=500,
-                              update_interval=500, min_threshold=300):
+                              update_interval=500, threshold_multiplier=200):
     slopes = []
     filtered = []
 
-    slope_window = data[:slope_window_size - 1].tolist()
+    slope_window = data[:slope_window_size].tolist()
 
     drift_window = [0] * drift_window_size
     current_drift = 0
     adjustment = 0
-    threshold = min_threshold
+    threshold = 400
 
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
@@ -114,7 +128,7 @@ def filter_drift_slopes_fixed(data, slope_window_size=5, drift_window_size=500,
         if i != 0 and i % update_interval == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
-            threshold = max(min_threshold, abs(current_drift) * 2)
+            threshold = math.log10(abs(current_drift)) * threshold_multiplier
             old_value = data[i] - (i * previous_drift) + adjustment
             new_value = data[i] - (i * current_drift) + adjustment
             adjustment -= new_value - old_value
@@ -123,7 +137,7 @@ def filter_drift_slopes_fixed(data, slope_window_size=5, drift_window_size=500,
         slope_window.append(data[i])
         slope = get_slope(slope_window)
 
-        if abs(slope) > threshold:
+        if abs(slope) > abs(threshold):
             value = data[i] - (i * current_drift) + adjustment
             filtered.append(value)
             slopes.append(slope)
@@ -160,16 +174,16 @@ def filter_drift(data, drift_window_size=500, update_interval=500):
     return filtered, []
 
 
-def filter_slopes(data, slope_window_size=5):
+def filter_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500):
     slopes = [0] * slope_window_size
     slope_slopes = [0] * slope_window_size
     filtered = [0] * slope_window_size
 
     thresholds = []
-    slope_window = data[:slope_window_size - 1].tolist()
+    slope_window = data[:slope_window_size].tolist()
     slope_slope_window = [0] * slope_window_size
 
-    drift_window = [0] * 5000
+    window_for_thresholds = [0] * drift_window_size
     threshold = 0
     current_drift = 0
     count_since_drift_update = 0
@@ -183,10 +197,12 @@ def filter_slopes(data, slope_window_size=5):
         slope_slope_window.append(slope)
         slope_slope = get_slope(slope_slope_window)
 
-        drift_window = drift_window[1:]
-        drift_window.append(data[i])
-        if i % 100 == 0:
-            threshold = max(400, abs(get_slope(drift_window)) * 2)
+        window_for_thresholds = window_for_thresholds[1:]
+        window_for_thresholds.append(data[i])
+
+        if i % drift_window_size == 0:
+            long_slope = get_slope(window_for_thresholds)
+            threshold = math.log10(abs(long_slope)) * threshold_multiplier
         thresholds.append(threshold)
 
         if abs(slope) > abs(threshold):
@@ -194,10 +210,10 @@ def filter_slopes(data, slope_window_size=5):
         else:
             slopes.append(0)
 
-        if abs(slope_slope) > 100:
+        if abs(slope_slope) > threshold:
             slope_slopes.append(slope_slope)
             count_since_drift_update = 0
-            current_drift = get_slope(drift_window)
+            current_drift = get_slope(window_for_thresholds)
         else:
             slope_slopes.append(0)
             count_since_drift_update += 1
@@ -208,16 +224,17 @@ def filter_slopes(data, slope_window_size=5):
         else:
             filtered.append(filtered[i-1])
 
-    return filtered, slope_slopes
+    return filtered, slopes
 
 
 def get_slope(data):
     if len(data) < 2:
         return 0
     median_size = max(1, len(data) / 20)  # 5%
+
     start = int(np.median(data[:median_size]))
     end = int(np.median(data[-median_size:]))
-    return (end - start) / len(data)
+    return (end - start) / (len(data) - 1)
 
 
 def get_continuous_slope(data):
