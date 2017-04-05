@@ -30,34 +30,46 @@ def main():
 
 
 def show_slope(columns, figure):
+    col = np.array(columns[6][START:-50]).astype(np.int)
+    row = np.array(columns[7][START:-50]).astype(np.int)
+
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    filtered1, markers1 = filter_drift_slopes_fixed(raw1)
-    filtered2, markers2 = filter_drift_slopes_fixed(raw2)
+    filtered1, [markers11, markers12] = filter_drift(raw1)
+    filtered2, [markers21, markers22] = filter_drift(raw2)
 
     slice_start = 10
     slice_end = len(raw1) - 10
 
-    markers1 = markers2 = []
-    # markers1 = markers1[slice_start:slice_end]
-    # markers2 = markers2[slice_start:slice_end]
+    markers11 = markers12 = markers21 = markers22 = []
+    # markers11 = markers11[slice_start:slice_end]
+    # markers12 = markers12[slice_start:slice_end]
+    # markers21 = markers21[slice_start:slice_end]
+    # markers22 = markers22[slice_start:slice_end]
     # channel1 = channel2 = []
     channel1 = filtered1[slice_start:slice_end]
     channel2 = filtered2[slice_start:slice_end]
 
-    raw1 = signal.detrend(raw1)
-    raw2 = signal.detrend(raw2)
+    # raw1 = signal.detrend(raw1)
+    # raw2 = signal.detrend(raw2)
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
 
+    row = [4 - x for x in row[slice_start:slice_end]]
+    col = [4 - x for x in col[slice_start:slice_end]]
+
     plot(figure, 211, channel1, 'blue', window=len(channel1))
-    plot(figure, 211, markers1, 'red', window=len(markers1), min_y=-1500, max_y=1500)
-    plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
+    plot(figure, 211, markers11, 'orange', window=len(markers11))
+    plot(figure, 211, markers12, 'yellow', window=len(markers12))
+    # plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
+    plot(figure, 211, col, 'lightblue', window=len(col), twin=True, min_y=-2, max_y=5)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
-    plot(figure, 212, markers2, 'red', window=len(markers2), min_y=-1500, max_y=1500)
-    plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
+    plot(figure, 212, markers21, 'orange', window=len(markers21))
+    plot(figure, 212, markers22, 'yellow', window=len(markers22))
+    # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
+    plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
 
 
 def filter_drift_slopes_flats(data, slope_window_size=5, threshold_multiplier=200, drift_window_size=500):
@@ -122,30 +134,53 @@ def filter_drift_slopes_fixed(data, slope_window_size=5, drift_window_size=500,
     adjustment = 0
     threshold = 400
 
+    mins = []
+    maxs = []
+    count_since_update = 0
+    calibration_window = [0] * drift_window_size
+    prev_min = data[0]
+    prev_max = data[0]
+
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
         drift_window.append(data[i])
         if i != 0 and i % update_interval == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
+
             threshold = math.log10(abs(current_drift)) * threshold_multiplier
+
             old_value = data[i] - (i * previous_drift) + adjustment
             new_value = data[i] - (i * current_drift) + adjustment
             adjustment -= new_value - old_value
+
+        value = data[i] - (i * current_drift) + adjustment
+        calibration_window = calibration_window[1:]
+        calibration_window.append(value)
+
+        if i != 0 and i % update_interval == 0:
+            prev_min = int(min(calibration_window))
+            prev_max = int(max(calibration_window))
+
+            count_since_update = 0
+        else:
+            count_since_update += 1
+
+        maxs.append(prev_max)  # - (count_since_update * current_drift) + adjustment)
+        mins.append(prev_min)  # - (count_since_update * current_drift) + adjustment)
 
         slope_window = slope_window[1:]
         slope_window.append(data[i])
         slope = get_slope(slope_window)
 
         if abs(slope) > abs(threshold):
-            value = data[i] - (i * current_drift) + adjustment
             filtered.append(value)
             slopes.append(slope)
         else:
             filtered.append(filtered[i - 1] if i > 0 else 0)
             slopes.append(0)
 
-    return filtered, slopes
+    return filtered, [maxs, mins]
 
 
 def filter_drift(data, drift_window_size=500, update_interval=500):
@@ -171,7 +206,7 @@ def filter_drift(data, drift_window_size=500, update_interval=500):
         value = data[i] - (count_since_drift_update * current_drift) + adjustment
         filtered.append(value)
 
-    return filtered, []
+    return filtered, [[], []]
 
 
 def filter_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500):
