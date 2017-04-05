@@ -32,10 +32,10 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    filtered1, markers1 = filter_drift(raw1)
-    filtered2, markers2 = filter_drift(raw2)
+    filtered1, markers1 = filter_drift_slopes_fixed(raw1)
+    filtered2, markers2 = filter_drift_slopes_fixed(raw2)
 
-    slice_start = 10
+    slice_start = 1000
     slice_end = len(raw1) - 10
 
     markers1 = markers2 = []
@@ -59,22 +59,54 @@ def show_slope(columns, figure):
     plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
-def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update_interval=500):
+def filter_drift_slopes_flats(data, slope_window_size=5):
     slopes = []
     filtered = []
 
     slope_window = data[:slope_window_size - 1].tolist()
-    slope_slope_window = [0] * slope_window_size
+
+    current_drift = 0
+    adjustment = 0
+
+    featureless = []
+
+    for i in range(0, len(data)):
+        slope_window = slope_window[1:]
+        slope_window.append(data[i])
+        slope = get_slope(slope_window)
+
+        if abs(slope) > 400:
+            if len(featureless) > 100:
+                previous_drift = current_drift
+                current_drift = get_continuous_slope(featureless)
+                old_value = data[i] - (i * previous_drift) + adjustment
+                new_value = data[i] - (i * current_drift) + adjustment
+                adjustment -= new_value - old_value
+
+            filtered.append(data[i] - (i * current_drift) + adjustment)
+            slopes.append(slope)
+
+            featureless = []
+        else:
+            filtered.append(filtered[i - 1] if i > 0 else 0)
+            slopes.append(0)
+
+            featureless.append(data[i])
+
+    return filtered, slopes
+
+
+def filter_drift_slopes_fixed(data, slope_window_size=5, drift_window_size=500,
+                              update_interval=500, min_threshold=300):
+    slopes = []
+    filtered = []
+
+    slope_window = data[:slope_window_size - 1].tolist()
 
     drift_window = [0] * drift_window_size
     current_drift = 0
-    count_since_drift_update = 0
-    adjustment = data[0]
-
-    baselines = []
-    baseline = 0
-
-    threshold = 400
+    adjustment = 0
+    threshold = min_threshold
 
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
@@ -82,28 +114,22 @@ def filter_drift_slopes(data, slope_window_size=5, drift_window_size=500, update
         if i != 0 and i % update_interval == 0:
             previous_drift = current_drift
             current_drift = get_slope(drift_window)
-            threshold = max(400, abs(current_drift) * 2)
-            adjustment -= update_interval * previous_drift
-
-            baseline = get_baseline(drift_window)
-
-            count_since_drift_update = 0
-        else:
-            count_since_drift_update += 1
+            threshold = max(min_threshold, abs(current_drift) * 2)
+            old_value = data[i] - (i * previous_drift) + adjustment
+            new_value = data[i] - (i * current_drift) + adjustment
+            adjustment -= new_value - old_value
 
         slope_window = slope_window[1:]
         slope_window.append(data[i])
         slope = get_slope(slope_window)
 
         if abs(slope) > threshold:
-            value = data[i] - (count_since_drift_update * current_drift) + adjustment
+            value = data[i] - (i * current_drift) + adjustment
             filtered.append(value)
             slopes.append(slope)
         else:
             filtered.append(filtered[i - 1] if i > 0 else 0)
             slopes.append(0)
-
-        baselines.append(baseline - ((count_since_drift_update + drift_window_size / 2) * current_drift) + adjustment)
 
     return filtered, slopes
 
@@ -186,10 +212,21 @@ def filter_slopes(data, slope_window_size=5):
 
 
 def get_slope(data):
+    if len(data) < 2:
+        return 0
     median_size = max(1, len(data) / 20)  # 5%
     start = int(np.median(data[:median_size]))
     end = int(np.median(data[-median_size:]))
     return (end - start) / len(data)
+
+
+def get_continuous_slope(data):
+    if len(data) < 2:
+        return 0
+    slopes = []
+    for i in range(1, len(data)):
+        slopes.append(data[i] - data[i-1])
+    return np.median(slopes)
 
 
 def get_baseline(data):
