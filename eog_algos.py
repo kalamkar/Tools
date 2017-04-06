@@ -45,16 +45,16 @@ def show_slope(columns, figure):
 
     blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points1]
     blink_points2 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2]
-    blink_values1 = [filtered1[i] for i in blink_points1]
-    blink_values2 = [filtered2[i] for i in blink_points2]
+    blink_values1 = [filtered1[i + slice_start] for i in blink_points1]
+    blink_values2 = [filtered2[i + slice_start] for i in blink_points2]
 
-    # markers11 = markers21 = []
-    markers11 = markers11[slice_start:slice_end]
-    markers21 = markers21[slice_start:slice_end]
+    markers11 = markers21 = []
+    # markers11 = markers11[slice_start:slice_end]
+    # markers21 = markers21[slice_start:slice_end]
 
-    # markers12 = markers22 = []
-    markers12 = markers12[slice_start:slice_end]
-    markers22 = markers22[slice_start:slice_end]
+    markers12 = markers22 = []
+    # markers12 = markers12[slice_start:slice_end]
+    # markers22 = markers22[slice_start:slice_end]
 
     # channel1 = channel2 = []
     channel1 = filtered1[slice_start:slice_end]
@@ -80,7 +80,7 @@ def show_slope(columns, figure):
     plot(figure, 212, markers22, 'yellow', window=len(markers22))
     # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
-    # plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
+    plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
 
 
 def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_size=30):
