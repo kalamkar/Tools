@@ -37,8 +37,8 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    filtered1, markers11, markers12, blink_points1 = filter_out_slopes(raw1)
-    filtered2, markers21, markers22, blink_points2 = filter_out_slopes(raw2)
+    [filtered1, markers11, markers12, blink_points1], \
+    [filtered2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
     slice_start = 3000
     slice_end = len(raw1) - 10
@@ -80,22 +80,34 @@ def show_slope(columns, figure):
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
 
 
-def filter_out_slopes(data):
-    filtered = []
+def process(horizontal, vertical):
+    h_filtered = []
+    v_filtered = []
 
-    drift = FixedWindowDriftTracker()
-    feature_tracker = SlopeFeatureTracker()
+    h_drift = FixedWindowDriftTracker()
+    v_drift = FixedWindowDriftTracker()
+
+    h_feature_tracker = SlopeFeatureTracker()
+    v_feature_tracker = SlopeFeatureTracker()
+
     blink_detector = BlinkDetector()
 
-    for i in range(0, len(data)):
-        value = drift.update(data[i])
-        filtered.append(value)
-        feature_tracker.check(data[i], value, drift.current_drift)
-        blink_detector.check(value)
+    for i in range(0, len(horizontal)):
+        h_value = h_drift.update(horizontal[i])
+        v_value = v_drift.update(vertical[i])
+
+        h_filtered.append(h_value)
+        v_filtered.append(v_value)
+
+        h_feature_tracker.check(horizontal[i], h_value, h_drift.current_drift)
+        v_feature_tracker.check(vertical[i], v_value, v_drift.current_drift)
+
+        blink_detector.check(v_value)
 
         # filtered[i] = filtered[i] - feature_tracker.baseline[i]
 
-    return filtered, [], feature_tracker.features, blink_detector.blinks
+    return [h_filtered, [], h_feature_tracker.features, blink_detector.blinks], \
+           [v_filtered, [], v_feature_tracker.features, blink_detector.blinks]
 
 
 class FixedWindowDriftTracker:
