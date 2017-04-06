@@ -43,7 +43,7 @@ def show_slope(columns, figure):
     slice_start = 3000
     slice_end = len(raw1) - 10
 
-    blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points1]
+    blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2] # Hack
     blink_points2 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2]
     blink_values1 = [filtered1[i + slice_start] for i in blink_points1]
     blink_values2 = [filtered2[i + slice_start] for i in blink_points2]
@@ -67,14 +67,14 @@ def show_slope(columns, figure):
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
     plot(figure, 211, markers11, 'orange', window=len(markers11), twin=True)
-    plot(figure, 211, markers12, 'red', window=len(markers12), twin=True)
-    # plot(figure, 211, blink_values1, 'orange', x=blink_points1, window=len(channel1))
+    # plot(figure, 211, markers12, 'red', window=len(markers12), twin=True)
+    plot(figure, 211, blink_values1, 'orange', x=blink_points1, window=len(channel1))
     # plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
     plot(figure, 211, col, 'lightblue', window=len(col), twin=True, min_y=-2, max_y=5)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
     plot(figure, 212, markers21, 'orange', window=len(markers21), twin=True)
-    plot(figure, 212, markers22, 'red', window=len(markers22), twin=True)
+    # plot(figure, 212, markers22, 'red', window=len(markers22), twin=True)
     plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
     # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
@@ -136,7 +136,8 @@ def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_
     return filtered, baseline, [], blinks
 
 
-def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500):
+def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500,
+                      blink_window_size=30):
     filtered = []
 
     drift_window = [0] * drift_window_size
@@ -151,6 +152,11 @@ def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift
     slope_window = [0] * slope_window_size
     threshold = threshold_multiplier
     feature_adjustment = 0
+
+    blinks = []
+
+    blink_window = [0] * blink_window_size
+    blink_skip_window = 0
 
     for i in range(0, len(data)):
         drift_window = drift_window[1:]
@@ -180,9 +186,19 @@ def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift
             slopes.append(0)
         baseline.append(value - feature_adjustment)
 
+        blink_window = blink_window[1:]
+        blink_window.append(value)
+        if blink_skip_window <= 0:
+            is_blink, blink_center = get_blink(blink_window)
+            if is_blink:
+                blinks.append(i - blink_window_size + blink_center)
+                blink_skip_window = blink_window_size - blink_center
+        else:
+            blink_skip_window -= 1
+
         filtered[i] = filtered[i] - baseline[i]
 
-    return filtered, [], slopes, []
+    return filtered, [], slopes, blinks
 
 
 def get_slope(data):
