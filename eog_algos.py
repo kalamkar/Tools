@@ -37,8 +37,8 @@ def show_slope(columns, figure):
     raw1 = np.array(columns[0][START:-50]).astype(np.int)
     raw2 = np.array(columns[1][START:-50]).astype(np.int)
 
-    filtered1, [markers11, markers12], blink_points1 = filter_out_slopes(raw1)
-    filtered2, [markers21, markers22], blink_points2 = filter_out_slopes(raw2)
+    filtered1, markers11, markers12, blink_points1 = filter_out_slopes(raw1)
+    filtered2, markers21, markers22, blink_points2 = filter_out_slopes(raw2)
 
     slice_start = 3000
     slice_end = len(raw1) - 10
@@ -48,15 +48,12 @@ def show_slope(columns, figure):
     blink_values1 = [filtered1[i + slice_start] for i in blink_points1]
     blink_values2 = [filtered2[i + slice_start] for i in blink_points2]
 
-    # markers11 = markers21 = []
     markers11 = markers11[slice_start:slice_end]
     markers21 = markers21[slice_start:slice_end]
 
-    markers12 = markers22 = []
-    # markers12 = markers12[slice_start:slice_end]
-    # markers22 = markers22[slice_start:slice_end]
+    markers12 = markers12[slice_start:slice_end]
+    markers22 = markers22[slice_start:slice_end]
 
-    # channel1 = channel2 = []
     channel1 = filtered1[slice_start:slice_end]
     channel2 = filtered2[slice_start:slice_end]
 
@@ -70,14 +67,14 @@ def show_slope(columns, figure):
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
     plot(figure, 211, markers11, 'orange', window=len(markers11), twin=True)
-    plot(figure, 211, markers12, 'yellow', window=len(markers12), twin=True)
+    plot(figure, 211, markers12, 'red', window=len(markers12), twin=True)
     # plot(figure, 211, blink_values1, 'orange', x=blink_points1, window=len(channel1))
     # plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
     plot(figure, 211, col, 'lightblue', window=len(col), twin=True, min_y=-2, max_y=5)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
     plot(figure, 212, markers21, 'orange', window=len(markers21), twin=True)
-    plot(figure, 212, markers22, 'yellow', window=len(markers22), twin=True)
+    plot(figure, 212, markers22, 'red', window=len(markers22), twin=True)
     plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
     # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
@@ -136,11 +133,7 @@ def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_
         else:
             blink_skip_window -= 1
 
-    maxs = [i + 5000 for i in baseline]
-    mins = [i - 5000 for i in baseline]
-
-    # TODO(abhi) Get baseline by ignoring the features, whatever that means
-    return filtered, [maxs, mins], blinks
+    return filtered, baseline, [], blinks
 
 
 def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500):
@@ -187,7 +180,9 @@ def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift
             slopes.append(0)
         baseline.append(value - feature_adjustment)
 
-    return filtered, [baseline, []], []
+        filtered[i] = filtered[i] - baseline[i]
+
+    return filtered, [], slopes, []
 
 
 def get_slope(data):
