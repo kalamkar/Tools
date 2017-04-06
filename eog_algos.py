@@ -80,62 +80,6 @@ def show_slope(columns, figure):
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
 
 
-def filter_drift(data, drift_window_size=500, update_interval=500, blink_window_size=30):
-    filtered = []
-    blinks = []
-
-    drift_window = [0] * drift_window_size
-    current_drift = 0
-    count_since_drift_update = 0
-    adjustment = 0
-
-    blink_window = [0] * blink_window_size
-    blink_skip_window = 0
-
-    baseline = []
-    count_since_calibration_update = 0
-    calibration_window = [0] * drift_window_size
-    prev_base = data[0]
-
-    for i in range(0, len(data)):
-        drift_window = drift_window[1:]
-        drift_window.append(data[i])
-        if i != 0 and i % update_interval == 0:
-            previous_drift = current_drift
-            current_drift = get_slope(drift_window)
-            adjustment -= update_interval * previous_drift
-
-            count_since_drift_update = 0
-        else:
-            count_since_drift_update += 1
-
-        value = data[i] - (count_since_drift_update * current_drift) + adjustment
-        filtered.append(value)
-
-        calibration_window = calibration_window[1:]
-        calibration_window.append(value)
-
-        if i != 0 and i % 100 == 0:
-            prev_base = int(np.median(calibration_window))
-            count_since_calibration_update = 0
-        else:
-            count_since_calibration_update += 1
-
-        baseline.append(prev_base) # - (count_since_calibration_update * current_drift))
-
-        blink_window = blink_window[1:]
-        blink_window.append(value)
-        if blink_skip_window <= 0:
-            is_blink, blink_center = get_blink(blink_window)
-            if is_blink:
-                blinks.append(i - blink_window_size + blink_center)
-                blink_skip_window = blink_window_size - blink_center
-        else:
-            blink_skip_window -= 1
-
-    return filtered, baseline, [], blinks
-
-
 def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500,
                       blink_window_size=30):
     filtered = []

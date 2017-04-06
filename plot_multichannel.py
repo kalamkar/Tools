@@ -16,7 +16,7 @@ SAMPLING_RATE = 51.2
 DOWN_SAMPLE_FACTOR = 30
 POLY_FIT_WINDOW = 10
 MEDIAN_WINDOW = 20
-
+MIN_BLINK_HEIGHT = 10000
 START = int(SAMPLING_RATE * 15)  # Ignore first 15 seconds
 
 
@@ -268,6 +268,31 @@ def get_continuous_slope(data):
     return np.median(slopes)
 
 
+def get_blink(data):
+    max_index = -1
+    min_index = -1
+    max_value = -sys.maxint - 1
+    min_value = sys.maxint
+    for i in range(0, len(data)):
+        if data[i] > max_value:
+            max_value = data[i]
+            max_index = i
+        if data[i] < min_value:
+            min_value = data[i]
+            min_index = i
+
+    is_maxima = max_index != 0 and max_index != len(data) -1 \
+        and data[max_index - 1] < data[max_index] > data[max_index + 1]
+    base = data[:len(data) * 1/3] + data[len(data) * 2/3:]
+    is_tall_enough = max_value - np.median(base) > MIN_BLINK_HEIGHT
+    # is_tall_enough = max_value - min_value > MIN_BLINK_HEIGHT
+    is_centered = (len(data) * 1/3) < max_index < (len(data) * 2/3)
+
+    if is_tall_enough and is_maxima and is_centered:
+        return True, max_index
+    return False, 0
+
+
 def filter_drift_slopes_flats(data, slope_window_size=5, threshold_multiplier=200, drift_window_size=500):
     slopes = []
     filtered = []
@@ -489,6 +514,62 @@ def process_realtime(data, cutoff):
         lastdiff1 = diff1
 
     return stage1, stage2
+
+
+def filter_drift_with_blinks(data, drift_window_size=500, update_interval=500, blink_window_size=30):
+    filtered = []
+    blinks = []
+
+    drift_window = [0] * drift_window_size
+    current_drift = 0
+    count_since_drift_update = 0
+    adjustment = 0
+
+    blink_window = [0] * blink_window_size
+    blink_skip_window = 0
+
+    baseline = []
+    count_since_calibration_update = 0
+    calibration_window = [0] * drift_window_size
+    prev_base = data[0]
+
+    for i in range(0, len(data)):
+        drift_window = drift_window[1:]
+        drift_window.append(data[i])
+        if i != 0 and i % update_interval == 0:
+            previous_drift = current_drift
+            current_drift = get_slope(drift_window)
+            adjustment -= update_interval * previous_drift
+
+            count_since_drift_update = 0
+        else:
+            count_since_drift_update += 1
+
+        value = data[i] - (count_since_drift_update * current_drift) + adjustment
+        filtered.append(value)
+
+        calibration_window = calibration_window[1:]
+        calibration_window.append(value)
+
+        if i != 0 and i % 100 == 0:
+            prev_base = int(np.median(calibration_window))
+            count_since_calibration_update = 0
+        else:
+            count_since_calibration_update += 1
+
+        baseline.append(prev_base) # - (count_since_calibration_update * current_drift))
+
+        blink_window = blink_window[1:]
+        blink_window.append(value)
+        if blink_skip_window <= 0:
+            is_blink, blink_center = get_blink(blink_window)
+            if is_blink:
+                blinks.append(i - blink_window_size + blink_center)
+                blink_skip_window = blink_window_size - blink_center
+        else:
+            blink_skip_window -= 1
+
+    return filtered, baseline, [], blinks
 
 
 def plot(figure, row_col, data, color, max_y=0, start=0,
