@@ -80,69 +80,105 @@ def show_slope(columns, figure):
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
 
 
-def filter_out_slopes(data, slope_window_size=5, threshold_multiplier=300, drift_window_size=500,
-                      blink_window_size=30):
+def filter_out_slopes(data):
     filtered = []
 
-    drift_window = [0] * drift_window_size
-    current_drift = 0
-    count_since_drift_update = 0
-    adjustment = 0
-
-    baseline = []
-
-    slopes = [0] * slope_window_size
-    thresholds = []
-    slope_window = [0] * slope_window_size
-    threshold = threshold_multiplier
-    feature_adjustment = 0
-
-    blinks = []
-
-    blink_window = [0] * blink_window_size
-    blink_skip_window = 0
+    drift = FixedWindowDriftTracker()
+    feature_tracker = SlopeFeatureTracker()
+    blink_detector = BlinkDetector()
 
     for i in range(0, len(data)):
-        drift_window = drift_window[1:]
-        drift_window.append(data[i])
-        if i != 0 and i % drift_window_size == 0:
-            previous_drift = current_drift
-            current_drift = get_slope(drift_window)
-            adjustment -= drift_window_size * previous_drift
-
-            count_since_drift_update = 0
-        else:
-            count_since_drift_update += 1
-
-        value = data[i] - (count_since_drift_update * current_drift) + adjustment
+        value = drift.update(data[i])
         filtered.append(value)
+        feature_tracker.check(data[i], value, drift.current_drift)
+        blink_detector.check(value)
 
-        slope_window = slope_window[1:]
-        slope_window.append(data[i])
-        slope = get_slope(slope_window)
-        if i % drift_window_size == 0 and current_drift > 0:
-            threshold = math.log10(abs(current_drift)) * threshold_multiplier
-        thresholds.append(threshold)
-        if abs(slope) > abs(threshold):
-            slopes.append(slope)
-            feature_adjustment = value - baseline[i - slope_window_size] if i > slope_window_size else 0
+        # filtered[i] = filtered[i] - feature_tracker.baseline[i]
+
+    return filtered, [], feature_tracker.features, blink_detector.blinks
+
+
+class FixedWindowDriftTracker:
+    def __init__(self, drift_window_size=500):
+        self.drift_window_size = drift_window_size
+        self.drift_window = []
+        self.current_drift = 0
+        self.count_since_drift_update = 0
+        self.adjustment = 0
+
+    def update(self, raw):
+        self.drift_window.append(raw)
+
+        if len(self.drift_window) == self.drift_window_size:
+            previous_drift = self.current_drift
+            self.current_drift = get_slope(self.drift_window)
+            self.adjustment -= self.drift_window_size * previous_drift
+            self.drift_window = []
+
+        return raw - (len(self.drift_window) * self.current_drift) + self.adjustment
+
+
+class SlopeFeatureTracker:
+    def __init__(self, slope_window_size=5, threshold_multiplier=300, threshold_update_interval=500):
+        self.slope_window_size = slope_window_size
+        self.threshold_update_interval = threshold_update_interval
+        self.slope_window = [0] * slope_window_size
+        self.threshold = threshold_multiplier
+        self.threshold_multiplier = threshold_multiplier
+        self.features = []
+        self.baseline = []
+        self.thresholds = []
+
+        self.feature_adjustment = 0
+        self.update_count = 0
+
+    def check(self, raw, flattened, current_drift):
+        self.update_count += 1
+
+        self.slope_window = self.slope_window[1:]
+        self.slope_window.append(raw)
+
+        slope = get_slope(self.slope_window)
+
+        if self.update_count % self.threshold_update_interval == 0 and current_drift > 0:
+            self.threshold = math.log10(abs(current_drift)) * self.threshold_multiplier
+
+        self.thresholds.append(self.threshold)
+
+        if abs(slope) > abs(self.threshold):
+            self.features.append(slope)
+            if self.update_count > self.slope_window_size:
+                self.feature_adjustment = flattened - self.baseline[self.update_count - self.slope_window_size]
+            else:
+                self.feature_adjustment = 0
         else:
-            slopes.append(0)
-        baseline.append(value - feature_adjustment)
+            self.features.append(0)
 
-        blink_window = blink_window[1:]
-        blink_window.append(value)
-        if blink_skip_window <= 0:
-            is_blink, blink_center = get_blink(blink_window)
+        self.baseline.append(flattened - self.feature_adjustment)
+
+
+class BlinkDetector:
+    def __init__(self, blink_window_size=30):
+        self.blink_window_size = blink_window_size
+        self.blinks = []
+
+        self.blink_window = [0] * blink_window_size
+        self.blink_skip_window = 0
+
+        self.update_count = 0
+
+    def check(self, flattened):
+        self.update_count += 1
+
+        self.blink_window = self.blink_window[1:]
+        self.blink_window.append(flattened)
+        if self.blink_skip_window <= 0:
+            is_blink, blink_center = get_blink(self.blink_window)
             if is_blink:
-                blinks.append(i - blink_window_size + blink_center)
-                blink_skip_window = blink_window_size - blink_center
+                self.blinks.append(self.update_count - self.blink_window_size + blink_center)
+                self.blink_skip_window = self.blink_window_size - blink_center
         else:
-            blink_skip_window -= 1
-
-        filtered[i] = filtered[i] - baseline[i]
-
-    return filtered, [], slopes, blinks
+            self.blink_skip_window -= 1
 
 
 def get_slope(data):
@@ -184,7 +220,7 @@ def get_blink(data):
             min_value = data[i]
             min_index = i
 
-    is_maxima = max_index != 0 and max_index != len(data) -1 \
+    is_maxima = max_index != 0 and max_index != len(data) - 1 \
         and data[max_index - 1] < data[max_index] > data[max_index + 1]
     base = data[:len(data) * 1/3] + data[len(data) * 2/3:]
     is_tall_enough = max_value - np.median(base) > MIN_BLINK_HEIGHT
