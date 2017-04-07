@@ -62,6 +62,9 @@ def show(columns, figure):
     levels1 = levels1[slice_start:slice_end]
     levels2 = levels2[slice_start:slice_end]
 
+    print 'Accuracy for Horizontal is %.2f%% and Vertical is %.2f%%' \
+          % (get_accuracy(levels1, col), get_accuracy(levels2, row))
+
     plot(figure, 211, channel1, 'blue', window=len(channel1))
     plot(figure, 211, markers11, 'orange', window=len(markers11))
     plot(figure, 211, markers12, 'yellow', window=len(markers12))
@@ -75,6 +78,16 @@ def show(columns, figure):
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True)
     plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
+
+
+def get_accuracy(estimate, truth, interval=1):
+    checks = 0
+    successes = 0
+    for i in range(len(estimate)):
+        if i % interval == 0:
+            checks += 1
+            successes += 1 if estimate[i] == truth[i] else 0
+    return successes * 100.0 / checks
 
 
 def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
