@@ -13,7 +13,6 @@ from scipy import signal
 from matplotlib import pyplot
 
 SAMPLING_RATE = 51.2
-START = int(SAMPLING_RATE * 15)  # Ignore first 15 seconds
 MIN_BLINK_HEIGHT = 10000
 
 
@@ -24,24 +23,24 @@ def main():
     figure = pyplot.figure(figsize=(15, 10))
 
     start = time.time()
-    show_slope(columns, figure)
+    show(columns, figure)
     print 'Processing took %d seconds' % (time.time() - start)
 
     pyplot.show()
 
 
-def show_slope(columns, figure):
-    col = np.array(columns[6][START:-50]).astype(np.int)
-    row = np.array(columns[7][START:-50]).astype(np.int)
+def show(columns, figure):
+    col = np.array(columns[6][1:]).astype(np.int)
+    row = np.array(columns[7][1:]).astype(np.int)
 
-    raw1 = np.array(columns[0][START:-50]).astype(np.int)
-    raw2 = np.array(columns[1][START:-50]).astype(np.int)
+    raw1 = np.array(columns[0][1:]).astype(np.int)
+    raw2 = np.array(columns[1][1:]).astype(np.int)
 
     [filtered1, markers11, markers12, blink_points1], \
     [filtered2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
-    slice_start = 3000
-    slice_end = len(raw1) - 10
+    slice_start = 6000
+    slice_end = len(raw1) - 50
 
     blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2] # Hack
     blink_points2 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2]
@@ -80,7 +79,7 @@ def show_slope(columns, figure):
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
 
 
-def process(horizontal, vertical):
+def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
     h_filtered = []
     v_filtered = []
 
@@ -96,18 +95,32 @@ def process(horizontal, vertical):
         h_value = h_drift.update(horizontal[i])
         v_value = v_drift.update(vertical[i])
 
+        h_feature_tracker.check(horizontal[i], h_value)
+        v_feature_tracker.check(vertical[i], v_value)
+
+        if blink_detector.check(v_value) and remove_blinks:
+            h_drift.remove_spike(blink_detector.blink_window_size)
+            v_drift.remove_spike(blink_detector.blink_window_size)
+            remove_spike(h_filtered, blink_detector.blink_window_size)
+            remove_spike(v_filtered, blink_detector.blink_window_size)
+
+        if remove_baseline:
+            h_value = h_value - h_feature_tracker.baseline[i]
+            v_value = v_value - v_feature_tracker.baseline[i]
+
         h_filtered.append(h_value)
         v_filtered.append(v_value)
 
-        h_feature_tracker.check(horizontal[i], h_value, h_drift.current_drift)
-        v_feature_tracker.check(vertical[i], v_value, v_drift.current_drift)
+    return [h_filtered, [], h_feature_tracker.features, blink_detector.blink_indices], \
+           [v_filtered, [], v_feature_tracker.features, blink_detector.blink_indices]
 
-        blink_detector.check(v_value)
 
-        # filtered[i] = filtered[i] - feature_tracker.baseline[i]
-
-    return [h_filtered, [], h_feature_tracker.features, blink_detector.blinks], \
-           [v_filtered, [], v_feature_tracker.features, blink_detector.blinks]
+def remove_spike(data, size):
+    end = len(data) - 1
+    start = max(0, end - size)
+    slope = (data[end] - data[start]) / size
+    for i in range(start, end + 1):
+        data[i] = data[start] + int(slope * (i - start))
 
 
 class FixedWindowDriftTracker:
@@ -129,6 +142,9 @@ class FixedWindowDriftTracker:
 
         return raw - (len(self.drift_window) * self.current_drift) + self.adjustment
 
+    def remove_spike(self, size):
+        remove_spike(self.drift_window, size)
+
 
 class SlopeFeatureTracker:
     def __init__(self, slope_window_size=5, threshold_multiplier=300, threshold_update_interval=500):
@@ -140,20 +156,24 @@ class SlopeFeatureTracker:
         self.features = []
         self.baseline = []
         self.thresholds = []
+        self.drift_window = []
 
         self.feature_adjustment = 0
         self.update_count = 0
 
-    def check(self, raw, flattened, current_drift):
+    def check(self, raw, flattened):
         self.update_count += 1
 
         self.slope_window = self.slope_window[1:]
         self.slope_window.append(raw)
-
         slope = get_slope(self.slope_window)
 
-        if self.update_count % self.threshold_update_interval == 0 and current_drift > 0:
-            self.threshold = math.log10(abs(current_drift)) * self.threshold_multiplier
+        self.drift_window.append(raw)
+        if self.update_count % self.threshold_update_interval == 0:
+            drift = get_slope(self.drift_window)
+            if abs(drift) > 0:
+                self.threshold = math.log10(abs(drift)) * self.threshold_multiplier
+            self.drift_window = []
 
         self.thresholds.append(self.threshold)
 
@@ -170,9 +190,9 @@ class SlopeFeatureTracker:
 
 
 class BlinkDetector:
-    def __init__(self, blink_window_size=30):
+    def __init__(self, blink_window_size=50):
         self.blink_window_size = blink_window_size
-        self.blinks = []
+        self.blink_indices = []
 
         self.blink_window = [0] * blink_window_size
         self.blink_skip_window = 0
@@ -184,13 +204,19 @@ class BlinkDetector:
 
         self.blink_window = self.blink_window[1:]
         self.blink_window.append(flattened)
+
+        is_blink = False
         if self.blink_skip_window <= 0:
             is_blink, blink_center = get_blink(self.blink_window)
             if is_blink:
-                self.blinks.append(self.update_count - self.blink_window_size + blink_center)
+                # self.blink_indices.append(self.update_count - self.blink_window_size)
+                self.blink_indices.append(self.update_count - self.blink_window_size + blink_center)
+                # self.blink_indices.append(self.update_count)
                 self.blink_skip_window = self.blink_window_size - blink_center
         else:
             self.blink_skip_window -= 1
+
+        return is_blink
 
 
 def get_slope(data):
