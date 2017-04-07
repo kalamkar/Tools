@@ -36,8 +36,8 @@ def show(columns, figure):
     raw1 = np.array(columns[0][1:]).astype(np.int)
     raw2 = np.array(columns[1][1:]).astype(np.int)
 
-    [filtered1, markers11, markers12, blink_points1], \
-    [filtered2, markers21, markers22, blink_points2] = process(raw1, raw2)
+    [filtered1, levels1, markers11, markers12, blink_points1], \
+    [filtered2, levels2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
     slice_start = 6000
     slice_end = len(raw1) - 50
@@ -56,27 +56,25 @@ def show(columns, figure):
     channel1 = filtered1[slice_start:slice_end]
     channel2 = filtered2[slice_start:slice_end]
 
-    raw1 = signal.detrend(raw1)
-    raw2 = signal.detrend(raw2)
-    raw1 = raw1[slice_start:slice_end]
-    raw2 = raw2[slice_start:slice_end]
-
     row = [4 - x for x in row[slice_start:slice_end]]
     col = [4 - x for x in col[slice_start:slice_end]]
+
+    levels1 = levels1[slice_start:slice_end]
+    levels2 = levels2[slice_start:slice_end]
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
     plot(figure, 211, markers11, 'orange', window=len(markers11))
     plot(figure, 211, markers12, 'yellow', window=len(markers12))
     plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
-    # plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
-    plot(figure, 211, col, 'lightblue', window=len(col), twin=True, min_y=-2, max_y=5)
+    plot(figure, 211, col, 'lightblue', window=len(col), twin=True)
+    plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
     plot(figure, 212, markers21, 'orange', window=len(markers21))
     plot(figure, 212, markers22, 'yellow', window=len(markers22))
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
-    # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
-    plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
+    plot(figure, 212, row, 'lightgreen', window=len(row), twin=True)
+    plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
 
 
 def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
@@ -119,8 +117,8 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
         h_filtered.append(h_value)
         v_filtered.append(v_value)
 
-    return [h_filtered, h_minmax.mins, h_minmax.maxs, blink_detector.blink_indices], \
-           [v_filtered, v_minmax.mins, v_minmax.maxs, blink_detector.blink_indices]
+    return [h_filtered, h_minmax.levels, h_minmax.mins, h_minmax.maxs, blink_detector.blink_indices], \
+           [v_filtered, v_minmax.levels, v_minmax.mins, v_minmax.maxs, blink_detector.blink_indices]
 
 
 class FixedWindowDriftTracker:
@@ -189,7 +187,8 @@ class SlopeFeatureTracker:
 
 
 class MinMaxTracker:
-    def __init__(self, window_size=500):
+    def __init__(self, window_size=500, num_steps=5):
+        self.num_steps = num_steps
         self.window_size = window_size
         self.minmax_window = []
         self.current_drift = 0
@@ -199,6 +198,8 @@ class MinMaxTracker:
 
         self.maxs = []
         self.mins = []
+
+        self.levels = []
 
     def update(self, value):
         self.minmax_window.append(value)
@@ -216,6 +217,8 @@ class MinMaxTracker:
 
         self.mins.append(self.current_min)
         self.maxs.append(self.current_max)
+
+        self.levels.append(get_level(value, self.current_min, self.current_max, self.num_steps))
 
     def remove_spike(self, size):
         remove_spike(self.minmax_window, size)
@@ -318,6 +321,12 @@ def remove_spike(data, size):
         data[i] = data[start] + int(slope * (i - start))
 
 
+def get_level(value, min_value, max_value, num_steps):
+    size = (max_value - min_value) / num_steps
+    value = max(min_value, min(max_value, value))
+    return (value - min_value) / size if size > 0 else 0
+
+
 def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
     if len(data) == 0:
         return
@@ -335,6 +344,8 @@ def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=Fa
         chart.set_ybound([-max_y, max_y])
     elif max_y:
         chart.set_ybound([min_y, max_y])
+
+    chart.margins(0.0, 0.05)
 
 
 if __name__ == "__main__":
