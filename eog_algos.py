@@ -39,7 +39,7 @@ def show(columns, figure):
     [filtered1, markers11, markers12, blink_points1], \
     [filtered2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
-    slice_start = 3000
+    slice_start = 6000
     slice_end = len(raw1) - 50
 
     blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2] # Hack
@@ -123,14 +123,6 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
            [v_filtered, v_minmax.mins, v_minmax.maxs, blink_detector.blink_indices]
 
 
-def remove_spike(data, size):
-    end = len(data) - 1
-    start = max(0, end - size)
-    slope = (data[end] - data[start]) / size
-    for i in range(start, end + 1):
-        data[i] = data[start] + int(slope * (i - start))
-
-
 class FixedWindowDriftTracker:
     def __init__(self, drift_window_size=500):
         self.drift_window_size = drift_window_size
@@ -197,11 +189,10 @@ class SlopeFeatureTracker:
 
 
 class MinMaxTracker:
-    def __init__(self, drift_window_size=500):
-        self.drift_window_size = drift_window_size
-        self.drift_window = []
+    def __init__(self, window_size=500):
+        self.window_size = window_size
+        self.minmax_window = []
         self.current_drift = 0
-        self.adjustment = 0
 
         self.current_min = 0
         self.current_max = 0
@@ -210,29 +201,24 @@ class MinMaxTracker:
         self.mins = []
 
     def update(self, value):
-        self.drift_window.append(value)
+        self.minmax_window.append(value)
 
-        if len(self.drift_window) == self.drift_window_size:
-            previous_drift = self.current_drift
-            self.current_drift = get_slope(self.drift_window)
-            self.adjustment -= self.drift_window_size * previous_drift
+        if len(self.minmax_window) == self.window_size:
+            self.current_drift = get_slope(self.minmax_window)
+            stddev = np.std(self.minmax_window)
 
-            min_value, min_index, max_value, max_index = get_min_max(self.drift_window)
-            min_value += (len(self.drift_window) - min_index) * self.current_drift
-            max_value += (len(self.drift_window) - max_index) * self.current_drift
-            self.current_min = min_value  # (min_value + max_value) / 2 - 5000
-            self.current_max = max_value  # (min_value + max_value) / 2 + 5000
-
-            self.drift_window = []
-
-        # self.current_min -= (len(self.drift_window) * self.current_drift) + self.adjustment
-        # self.current_max -= (len(self.drift_window) * self.current_drift) + self.adjustment
+            min_value, min_index, max_value, max_index = get_min_max(self.minmax_window)
+            min_value += (len(self.minmax_window) - min_index) * self.current_drift
+            max_value += (len(self.minmax_window) - max_index) * self.current_drift
+            self.current_min = (min_value + max_value) / 2 - 8000
+            self.current_max = (min_value + max_value) / 2 + 8000
+            self.minmax_window = []
 
         self.mins.append(self.current_min)
         self.maxs.append(self.current_max)
 
     def remove_spike(self, size):
-        remove_spike(self.drift_window, size)
+        remove_spike(self.minmax_window, size)
 
 
 class BlinkDetector:
@@ -320,6 +306,16 @@ def get_blink(data):
     if is_tall_enough and is_maxima and is_centered:
         return True, max_index
     return False, 0
+
+
+def remove_spike(data, size):
+    end = len(data) - 1
+    if end <= 0:
+        return
+    start = max(0, end - size)
+    slope = (data[end] - data[start]) / size
+    for i in range(start, end + 1):
+        data[i] = data[start] + int(slope * (i - start))
 
 
 def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
