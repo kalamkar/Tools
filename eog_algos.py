@@ -39,7 +39,7 @@ def show(columns, figure):
     [filtered1, markers11, markers12, blink_points1], \
     [filtered2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
-    slice_start = 6000
+    slice_start = 3000
     slice_end = len(raw1) - 50
 
     blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2] # Hack
@@ -65,16 +65,16 @@ def show(columns, figure):
     col = [4 - x for x in col[slice_start:slice_end]]
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
-    plot(figure, 211, markers11, 'orange', window=len(markers11), twin=True)
-    # plot(figure, 211, markers12, 'red', window=len(markers12), twin=True)
-    plot(figure, 211, blink_values1, 'orange', x=blink_points1, window=len(channel1))
+    plot(figure, 211, markers11, 'orange', window=len(markers11))
+    plot(figure, 211, markers12, 'yellow', window=len(markers12))
+    plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
     # plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
     plot(figure, 211, col, 'lightblue', window=len(col), twin=True, min_y=-2, max_y=5)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
-    plot(figure, 212, markers21, 'orange', window=len(markers21), twin=True)
-    # plot(figure, 212, markers22, 'red', window=len(markers22), twin=True)
-    plot(figure, 212, blink_values2, 'orange', x=blink_points2, window=len(channel2))
+    plot(figure, 212, markers21, 'orange', window=len(markers21))
+    plot(figure, 212, markers22, 'yellow', window=len(markers22))
+    plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
     # plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True, min_y=-2, max_y=5)
 
@@ -91,28 +91,36 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
 
     blink_detector = BlinkDetector()
 
+    h_minmax = MinMaxTracker()
+    v_minmax = MinMaxTracker()
+
     for i in range(0, len(horizontal)):
         h_value = h_drift.update(horizontal[i])
         v_value = v_drift.update(vertical[i])
 
-        h_feature_tracker.check(horizontal[i], h_value)
-        v_feature_tracker.check(vertical[i], v_value)
+        h_feature_tracker.update(horizontal[i], h_value)
+        v_feature_tracker.update(vertical[i], v_value)
 
         if blink_detector.check(v_value) and remove_blinks:
             h_drift.remove_spike(blink_detector.blink_window_size)
             v_drift.remove_spike(blink_detector.blink_window_size)
             remove_spike(h_filtered, blink_detector.blink_window_size)
             remove_spike(v_filtered, blink_detector.blink_window_size)
+            h_minmax.remove_spike(blink_detector.blink_window_size)
+            v_minmax.remove_spike(blink_detector.blink_window_size)
 
         if remove_baseline:
             h_value = h_value - h_feature_tracker.baseline[i]
             v_value = v_value - v_feature_tracker.baseline[i]
 
+        h_minmax.update(h_value)
+        v_minmax.update(v_value)
+
         h_filtered.append(h_value)
         v_filtered.append(v_value)
 
-    return [h_filtered, [], h_feature_tracker.features, blink_detector.blink_indices], \
-           [v_filtered, [], v_feature_tracker.features, blink_detector.blink_indices]
+    return [h_filtered, h_minmax.mins, h_minmax.maxs, blink_detector.blink_indices], \
+           [v_filtered, v_minmax.mins, v_minmax.maxs, blink_detector.blink_indices]
 
 
 def remove_spike(data, size):
@@ -128,7 +136,6 @@ class FixedWindowDriftTracker:
         self.drift_window_size = drift_window_size
         self.drift_window = []
         self.current_drift = 0
-        self.count_since_drift_update = 0
         self.adjustment = 0
 
     def update(self, raw):
@@ -161,7 +168,7 @@ class SlopeFeatureTracker:
         self.feature_adjustment = 0
         self.update_count = 0
 
-    def check(self, raw, flattened):
+    def update(self, raw, flattened):
         self.update_count += 1
 
         self.slope_window = self.slope_window[1:]
@@ -187,6 +194,45 @@ class SlopeFeatureTracker:
             self.features.append(0)
 
         self.baseline.append(flattened - self.feature_adjustment)
+
+
+class MinMaxTracker:
+    def __init__(self, drift_window_size=500):
+        self.drift_window_size = drift_window_size
+        self.drift_window = []
+        self.current_drift = 0
+        self.adjustment = 0
+
+        self.current_min = 0
+        self.current_max = 0
+
+        self.maxs = []
+        self.mins = []
+
+    def update(self, value):
+        self.drift_window.append(value)
+
+        if len(self.drift_window) == self.drift_window_size:
+            previous_drift = self.current_drift
+            self.current_drift = get_slope(self.drift_window)
+            self.adjustment -= self.drift_window_size * previous_drift
+
+            min_value, min_index, max_value, max_index = get_min_max(self.drift_window)
+            min_value += (len(self.drift_window) - min_index) * self.current_drift
+            max_value += (len(self.drift_window) - max_index) * self.current_drift
+            self.current_min = min_value  # (min_value + max_value) / 2 - 5000
+            self.current_max = max_value  # (min_value + max_value) / 2 + 5000
+
+            self.drift_window = []
+
+        # self.current_min -= (len(self.drift_window) * self.current_drift) + self.adjustment
+        # self.current_max -= (len(self.drift_window) * self.current_drift) + self.adjustment
+
+        self.mins.append(self.current_min)
+        self.maxs.append(self.current_max)
+
+    def remove_spike(self, size):
+        remove_spike(self.drift_window, size)
 
 
 class BlinkDetector:
@@ -245,7 +291,7 @@ def get_baseline(data):
     return (end + start) / 2
 
 
-def get_blink(data):
+def get_min_max(data):
     max_index = -1
     min_index = -1
     max_value = -sys.maxint - 1
@@ -257,6 +303,12 @@ def get_blink(data):
         if data[i] < min_value:
             min_value = data[i]
             min_index = i
+
+    return min_value, min_index, max_value, max_index
+
+
+def get_blink(data):
+    min_value, min_index, max_value, max_index = get_min_max(data)
 
     is_maxima = max_index != 0 and max_index != len(data) - 1 \
         and data[max_index - 1] < data[max_index] > data[max_index + 1]
