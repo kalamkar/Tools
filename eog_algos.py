@@ -115,10 +115,10 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=False):
         h_value = h_drift.update(h_raw)
         v_value = v_drift.update(v_raw)
 
-        h_raw = h_value
-        v_raw = v_value
-        h_value = h_drift2.update(h_value)
-        v_value = v_drift2.update(v_value)
+        # h_raw = h_value
+        # v_raw = v_value
+        # h_value = h_drift2.update(h_value)
+        # v_value = v_drift2.update(v_value)
 
         h_feature_tracker.update(h_raw, h_value)
         v_feature_tracker.update(v_raw, v_value)
@@ -165,31 +165,6 @@ class FixedWindowSlopeRemover:
 
     def remove_spike(self, size):
         remove_spike(self.drift_window, size)
-
-
-class MovingWindowSlopeRemover:
-    def __init__(self, window_size=500):
-        self.window_size = window_size
-        self.window = [0] * window_size
-        self.current_drift = 0
-        self.adjustment = 0
-
-        self.update_count = 0
-
-    def update(self, raw):
-        self.update_count += 1
-        self.window = self.window[1:]
-        self.window.append(raw)
-
-        if self.update_count % self.window_size == 0:
-            previous_drift = self.current_drift
-            self.current_drift = get_slope(self.window)
-            self.adjustment -= self.window_size * previous_drift
-
-        return raw - ((self.update_count % self.window_size) * self.current_drift) + self.adjustment
-
-    def remove_spike(self, size):
-        remove_spike(self.window, size)
 
 
 class SlopeFeatureTracker:
