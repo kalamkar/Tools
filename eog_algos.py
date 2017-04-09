@@ -9,7 +9,7 @@ import sys
 import math
 import numpy as np
 import time
-from scipy import signal
+import scipy.stats
 from matplotlib import pyplot
 
 SAMPLING_RATE = 51.2
@@ -66,18 +66,18 @@ def show(columns, figure):
           % (get_accuracy(levels1, col), get_accuracy(levels2, row))
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
-    plot(figure, 211, markers11, 'orange', window=len(markers11))
-    plot(figure, 211, markers12, 'yellow', window=len(markers12))
+    # plot(figure, 211, markers11, 'orange', window=len(markers11))
+    # plot(figure, 211, markers12, 'yellow', window=len(markers12))
     plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
     plot(figure, 211, col, 'lightblue', window=len(col), twin=True)
-    plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
+    # plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
-    plot(figure, 212, markers21, 'orange', window=len(markers21))
-    plot(figure, 212, markers22, 'yellow', window=len(markers22))
+    # plot(figure, 212, markers21, 'orange', window=len(markers21))
+    # plot(figure, 212, markers22, 'yellow', window=len(markers22))
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True)
-    plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
+    # plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
 
 
 def get_accuracy(estimate, truth, interval=1):
@@ -90,12 +90,15 @@ def get_accuracy(estimate, truth, interval=1):
     return successes * 100.0 / checks
 
 
-def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
+def process(horizontal, vertical, remove_blinks=True, remove_baseline=False):
     h_filtered = []
     v_filtered = []
 
-    h_drift = FixedWindowDriftTracker()
-    v_drift = FixedWindowDriftTracker()
+    h_drift = FixedWindowSlopeRemover()
+    v_drift = FixedWindowSlopeRemover()
+
+    h_drift2 = WeightedWindowDriftRemover()
+    v_drift2 = WeightedWindowDriftRemover()
 
     h_feature_tracker = SlopeFeatureTracker()
     v_feature_tracker = SlopeFeatureTracker()
@@ -106,11 +109,19 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
     v_minmax = MinMaxTracker()
 
     for i in range(0, len(horizontal)):
-        h_value = h_drift.update(horizontal[i])
-        v_value = v_drift.update(vertical[i])
+        h_raw = horizontal[i]
+        v_raw = vertical[i]
 
-        h_feature_tracker.update(horizontal[i], h_value)
-        v_feature_tracker.update(vertical[i], v_value)
+        h_value = h_drift.update(h_raw)
+        v_value = v_drift.update(v_raw)
+
+        h_raw = h_value
+        v_raw = v_value
+        h_value = h_drift2.update(h_value)
+        v_value = v_drift2.update(v_value)
+
+        h_feature_tracker.update(h_raw, h_value)
+        v_feature_tracker.update(v_raw, v_value)
 
         if blink_detector.check(v_value) and remove_blinks:
             h_drift.remove_spike(blink_detector.blink_window_size)
@@ -134,7 +145,7 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
            [v_filtered, v_minmax.levels, v_minmax.mins, v_minmax.maxs, blink_detector.blink_indices]
 
 
-class FixedWindowDriftTracker:
+class FixedWindowSlopeRemover:
     def __init__(self, drift_window_size=500):
         self.drift_window_size = drift_window_size
         self.drift_window = []
@@ -154,6 +165,31 @@ class FixedWindowDriftTracker:
 
     def remove_spike(self, size):
         remove_spike(self.drift_window, size)
+
+
+class MovingWindowSlopeRemover:
+    def __init__(self, window_size=500):
+        self.window_size = window_size
+        self.window = [0] * window_size
+        self.current_drift = 0
+        self.adjustment = 0
+
+        self.update_count = 0
+
+    def update(self, raw):
+        self.update_count += 1
+        self.window = self.window[1:]
+        self.window.append(raw)
+
+        if self.update_count % self.window_size == 0:
+            previous_drift = self.current_drift
+            self.current_drift = get_slope(self.window)
+            self.adjustment -= self.window_size * previous_drift
+
+        return raw - ((self.update_count % self.window_size) * self.current_drift) + self.adjustment
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
 
 
 class SlopeFeatureTracker:
@@ -267,6 +303,40 @@ class BlinkDetector:
         return is_blink
 
 
+class WeightedWindowDriftRemover:
+    def __init__(self, window_size=1024):
+        self.window_size = window_size
+        self.window = [1] * window_size
+        self.update_count = 0
+        self.baseline = []
+
+        xx = np.linspace(-3, 0, num=self.window_size)
+        self.window_mask = scipy.stats.norm.pdf(xx, loc=0, scale=1)
+        self.window_mask = self.window_size * self.window_mask / sum(self.window_mask)
+        # self.window_mask = ones(1, self.window_size)
+
+    def update(self, value):
+        self.update_count += 1
+
+        self.window = self.window[1:]
+        self.window.append(value)
+
+        mean_estimate = np.mean(self.window_mask * self.window)
+
+        self.baseline.append(mean_estimate)
+        return value - mean_estimate
+
+        # avgWin = zeros(1, winlen);
+        # if kk > winlen
+        #     avgWin = z(kk - winlen:kk - 1)
+        # else:
+        #     avgWin(winlen - kk + 1:end) = z(1:kk)
+        #
+        # meanEst(kk) = mean(winmask.* avgWin)
+        #
+        # modz(kk) = z(kk) - meanEst(kk)
+
+
 def get_slope(data):
     if len(data) < 2:
         return 0
@@ -359,6 +429,7 @@ def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=Fa
         chart.set_ybound([min_y, max_y])
 
     chart.margins(0.0, 0.05)
+    chart.grid(not twin)
 
 
 if __name__ == "__main__":
