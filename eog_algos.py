@@ -252,7 +252,7 @@ class FeatureBasedMinMaxTracker:
     def __init__(self, window_size=500, num_steps=5):
         self.num_steps = num_steps
         self.window_size = window_size
-        self.window = []
+        self.window = [0] * window_size
         self.current_drift = 0
 
         self.current_min = 0
@@ -263,19 +263,25 @@ class FeatureBasedMinMaxTracker:
 
         self.levels = []
 
+        self.update_count = 0
+        self.count_since_update = 0
+
     def update(self, value):
+        self.update_count += 1
+        self.window = self.window[1:]
         self.window.append(value)
 
-        if len(self.window) >= self.window_size and value != self.window[-2]:
+        if value != self.window[-2]:
             self.current_drift = get_slope(self.window)
-            # stddev = np.std(self.window)
+            stddev = np.std(self.window)
 
-            min_value, min_index, max_value, max_index = get_min_max(self.window)
-            min_value += (len(self.window) - min_index) * self.current_drift
-            max_value += (len(self.window) - max_index) * self.current_drift
-            self.current_min = (min_value + max_value) / 2 - 8000
-            self.current_max = (min_value + max_value) / 2 + 8000
-            self.window = []
+            median = np.median(self.window)
+            self.current_min = median + (self.count_since_update / 2) * self.current_drift - (3 * stddev)
+            self.current_max = median + (self.count_since_update / 2) * self.current_drift + (3 * stddev)
+
+            self.count_since_update = 0
+        else:
+            self.count_since_update += 1
 
         self.mins.append(self.current_min)
         self.maxs.append(self.current_max)
@@ -420,7 +426,7 @@ def remove_spike(data, size):
 def get_level(value, min_value, max_value, num_steps):
     size = (max_value - min_value) / num_steps
     value = max(min_value, min(max_value, value))
-    return (value - min_value) / size if size > 0 else 0
+    return int((value - min_value) / size) if size > 0 else 0
 
 
 def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
