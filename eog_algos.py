@@ -65,22 +65,22 @@ def show(columns, figure):
     print 'Accuracy for Horizontal is %.2f%% and Vertical is %.2f%%' \
           % (get_accuracy(levels1, col), get_accuracy(levels2, row))
 
-    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    # plot(figure, 211, channel1, 'blue', window=len(channel1))
     # plot(figure, 211, markers11, 'orange', window=len(markers11))
     # plot(figure, 211, markers12, 'yellow', window=len(markers12))
     plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
     plot(figure, 211, col, 'lightblue', window=len(col), twin=True)
-    # plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
+    plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
 
-    plot(figure, 212, channel2, 'green', window=len(channel2))
+    # plot(figure, 212, channel2, 'green', window=len(channel2))
     # plot(figure, 212, markers21, 'orange', window=len(markers21))
     # plot(figure, 212, markers22, 'yellow', window=len(markers22))
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
     plot(figure, 212, row, 'lightgreen', window=len(row), twin=True)
-    # plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
+    plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
 
 
-def get_accuracy(estimate, truth, interval=1):
+def get_accuracy(estimate, truth, interval=5):
     checks = 0
     successes = 0
     for i in range(len(estimate)):
@@ -90,7 +90,7 @@ def get_accuracy(estimate, truth, interval=1):
     return successes * 100.0 / checks
 
 
-def process(horizontal, vertical, remove_blinks=True, remove_baseline=False):
+def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
     h_filtered = []
     v_filtered = []
 
@@ -105,8 +105,8 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=False):
 
     blink_detector = BlinkDetector()
 
-    h_minmax = MinMaxTracker()
-    v_minmax = MinMaxTracker()
+    h_minmax = FeatureBasedMinMaxTracker()
+    v_minmax = FeatureBasedMinMaxTracker()
 
     for i in range(0, len(horizontal)):
         h_raw = horizontal[i]
@@ -210,7 +210,7 @@ class SlopeFeatureTracker:
         self.baseline.append(flattened - self.feature_adjustment)
 
 
-class MinMaxTracker:
+class FixedWindowMinMaxTracker:
     def __init__(self, window_size=500, num_steps=5):
         self.num_steps = num_steps
         self.window_size = window_size
@@ -246,6 +246,44 @@ class MinMaxTracker:
 
     def remove_spike(self, size):
         remove_spike(self.minmax_window, size)
+
+
+class FeatureBasedMinMaxTracker:
+    def __init__(self, window_size=500, num_steps=5):
+        self.num_steps = num_steps
+        self.window_size = window_size
+        self.window = []
+        self.current_drift = 0
+
+        self.current_min = 0
+        self.current_max = 0
+
+        self.maxs = []
+        self.mins = []
+
+        self.levels = []
+
+    def update(self, value):
+        self.window.append(value)
+
+        if len(self.window) >= self.window_size and value != self.window[-2]:
+            self.current_drift = get_slope(self.window)
+            # stddev = np.std(self.window)
+
+            min_value, min_index, max_value, max_index = get_min_max(self.window)
+            min_value += (len(self.window) - min_index) * self.current_drift
+            max_value += (len(self.window) - max_index) * self.current_drift
+            self.current_min = (min_value + max_value) / 2 - 8000
+            self.current_max = (min_value + max_value) / 2 + 8000
+            self.window = []
+
+        self.mins.append(self.current_min)
+        self.maxs.append(self.current_max)
+
+        self.levels.append(get_level(value, self.current_min, self.current_max, self.num_steps))
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
 
 
 class BlinkDetector:
