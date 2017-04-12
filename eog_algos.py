@@ -90,7 +90,7 @@ def get_accuracy(estimate, truth, interval=5):
     return successes * 100.0 / checks
 
 
-def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
+def process(horizontal, vertical, remove_blinks=True):
     h_filtered = []
     v_filtered = []
 
@@ -115,25 +115,21 @@ def process(horizontal, vertical, remove_blinks=True, remove_baseline=True):
         h_value = h_drift.update(h_raw)
         v_value = v_drift.update(v_raw)
 
-        # h_raw = h_value
-        # v_raw = v_value
-        # h_value = h_drift2.update(h_value)
-        # v_value = v_drift2.update(v_value)
+        h_value = h_drift2.update(h_value)
+        v_value = v_drift2.update(v_value)
 
-        h_feature_tracker.update(h_raw, h_value)
-        v_feature_tracker.update(v_raw, v_value)
+        h_value = h_value - h_feature_tracker.update(h_value)
+        v_value = v_value - v_feature_tracker.update(v_value)
 
         if blink_detector.check(v_value) and remove_blinks:
             h_drift.remove_spike(blink_detector.blink_window_size)
             v_drift.remove_spike(blink_detector.blink_window_size)
+            h_drift2.remove_spike(blink_detector.blink_window_size)
+            v_drift2.remove_spike(blink_detector.blink_window_size)
             remove_spike(h_filtered, blink_detector.blink_window_size)
             remove_spike(v_filtered, blink_detector.blink_window_size)
             h_minmax.remove_spike(blink_detector.blink_window_size)
             v_minmax.remove_spike(blink_detector.blink_window_size)
-
-        if remove_baseline:
-            h_value = h_value - h_feature_tracker.baseline[i]
-            v_value = v_value - v_feature_tracker.baseline[i]
 
         h_minmax.update(h_value)
         v_minmax.update(v_value)
@@ -168,46 +164,45 @@ class FixedWindowSlopeRemover:
 
 
 class SlopeFeatureTracker:
-    def __init__(self, slope_window_size=5, threshold_multiplier=300, threshold_update_interval=500):
+    def __init__(self, slope_window_size=5, threshold_multiplier=2, threshold_update_interval=500):
         self.slope_window_size = slope_window_size
         self.threshold_update_interval = threshold_update_interval
         self.slope_window = [0] * slope_window_size
         self.threshold = threshold_multiplier
         self.threshold_multiplier = threshold_multiplier
         self.features = []
-        self.baseline = []
+        self.baseline = [0] * slope_window_size
         self.thresholds = []
-        self.drift_window = []
+        self.threshold_window = []
 
         self.feature_adjustment = 0
         self.update_count = 0
 
-    def update(self, raw, flattened):
+    def update(self, value):
         self.update_count += 1
 
         self.slope_window = self.slope_window[1:]
-        self.slope_window.append(raw)
+        self.slope_window.append(value)
         slope = get_slope(self.slope_window)
 
-        self.drift_window.append(raw)
+        self.threshold_window.append(slope)
         if self.update_count % self.threshold_update_interval == 0:
-            drift = get_slope(self.drift_window)
-            if abs(drift) > 0:
-                self.threshold = math.log10(abs(drift)) * self.threshold_multiplier
-            self.drift_window = []
+            self.threshold = np.std(self.threshold_window) * self.threshold_multiplier
+            # drift = get_slope(self.drift_window)
+            # if abs(drift) > 0:
+            #     self.threshold = math.log10(abs(drift)) * self.threshold_multiplier
+            self.threshold_window = []
 
         self.thresholds.append(self.threshold)
 
         if abs(slope) > abs(self.threshold):
             self.features.append(slope)
-            if self.update_count > self.slope_window_size:
-                self.feature_adjustment = flattened - self.baseline[self.update_count - self.slope_window_size]
-            else:
-                self.feature_adjustment = 0
+            self.feature_adjustment = value - self.baseline[0]
         else:
             self.features.append(0)
 
-        self.baseline.append(flattened - self.feature_adjustment)
+        self.baseline.append(value - self.feature_adjustment)
+        return self.baseline[-1]
 
 
 class FixedWindowMinMaxTracker:
@@ -247,7 +242,7 @@ class FixedWindowMinMaxTracker:
 
 
 class FeatureBasedMinMaxTracker:
-    def __init__(self, window_size=500, num_steps=5):
+    def __init__(self, window_size=1000, num_steps=5):
         self.num_steps = num_steps
         self.window_size = window_size
         self.window = [0] * window_size
@@ -270,10 +265,10 @@ class FeatureBasedMinMaxTracker:
         self.window.append(value)
 
         if value != self.window[-2]:
-            self.current_drift = get_slope(self.window)
+            self.current_drift = 0  # get_slope(self.window)
             stddev = np.std(self.window)
 
-            median = np.median(self.window)
+            median = 0  # np.median(self.window)
             self.current_min = median + (self.count_since_update / 2) * self.current_drift - (3 * stddev)
             self.current_max = median + (self.count_since_update / 2) * self.current_drift + (3 * stddev)
 
@@ -352,6 +347,9 @@ class WeightedWindowDriftRemover:
         # meanEst(kk) = mean(winmask.* avgWin)
         #
         # modz(kk) = z(kk) - meanEst(kk)
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
 
 
 def get_slope(data):
