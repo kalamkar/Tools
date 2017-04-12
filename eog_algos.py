@@ -214,7 +214,7 @@ class FixedWindowMinMaxTracker:
     def __init__(self, window_size=500, num_steps=5):
         self.num_steps = num_steps
         self.window_size = window_size
-        self.minmax_window = []
+        self.window = []
         self.current_drift = 0
 
         self.current_min = 0
@@ -226,18 +226,16 @@ class FixedWindowMinMaxTracker:
         self.levels = []
 
     def update(self, value):
-        self.minmax_window.append(value)
+        self.window.append(value)
 
-        if len(self.minmax_window) == self.window_size:
-            self.current_drift = get_slope(self.minmax_window)
-            stddev = np.std(self.minmax_window)
+        if len(self.window) == self.window_size:
+            self.current_drift = get_slope(self.window)
+            stddev = np.std(self.window)
 
-            min_value, min_index, max_value, max_index = get_min_max(self.minmax_window)
-            min_value += (len(self.minmax_window) - min_index) * self.current_drift
-            max_value += (len(self.minmax_window) - max_index) * self.current_drift
-            self.current_min = (min_value + max_value) / 2 - 8000
-            self.current_max = (min_value + max_value) / 2 + 8000
-            self.minmax_window = []
+            median = np.median(self.window)
+            self.current_min = median + (len(self.window) / 2) * self.current_drift - (3 * stddev)
+            self.current_max = median + (len(self.window) / 2) * self.current_drift + (3 * stddev)
+            self.window = []
 
         self.mins.append(self.current_min)
         self.maxs.append(self.current_max)
@@ -245,7 +243,7 @@ class FixedWindowMinMaxTracker:
         self.levels.append(get_level(value, self.current_min, self.current_max, self.num_steps))
 
     def remove_spike(self, size):
-        remove_spike(self.minmax_window, size)
+        remove_spike(self.window, size)
 
 
 class FeatureBasedMinMaxTracker:
