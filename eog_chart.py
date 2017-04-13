@@ -9,6 +9,7 @@ import sys
 import math
 import numpy as np
 import time
+import scipy.signal
 import scipy.stats
 from matplotlib import pyplot
 
@@ -42,8 +43,11 @@ def show(columns, figure):
     col = np.array(columns[6][1:]).astype(np.int)
     row = np.array(columns[7][1:]).astype(np.int)
 
-    slice_start = 6000
-    slice_end = len(raw1) - 512
+    slice_start = 9000
+    slice_end = 11000  # len(raw1) - 512
+
+    raw1 = scipy.signal.detrend(raw1)
+    raw2 = scipy.signal.detrend(raw2)
 
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
@@ -51,23 +55,23 @@ def show(columns, figure):
     filtered1 = filtered1[slice_start:slice_end]
     filtered2 = filtered2[slice_start:slice_end]
 
+    est_row = [max(est_row) - x for x in est_row[slice_start:slice_end]]
+    est_col = [max(est_col) - x for x in est_col[slice_start:slice_end]]
+
     row = [4 - x for x in row[slice_start:slice_end]]
     col = [4 - x for x in col[slice_start:slice_end]]
-
-    est_col = est_col[slice_start:slice_end]
-    est_row = est_row[slice_start:slice_end]
 
     print 'Accuracy for Horizontal is %.2f%% and Vertical is %.2f%%' \
           % (get_accuracy(est_col, col), get_accuracy(est_row, row))
 
     plot(figure, 211, filtered1, 'lightblue', window=len(filtered1))
     # plot(figure, 211, col, 'orange', window=len(col), twin=True)
-    # plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
+    plot(figure, 211, est_col, 'red', window=len(est_col), twin=True)
     plot(figure, 211, raw1, 'blue', window=len(raw1), twin=True)
 
     plot(figure, 212, filtered2, 'lightgreen', window=len(filtered2))
     # plot(figure, 212, row, 'orange', window=len(row), twin=True)
-    # plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
+    plot(figure, 212, est_row, 'red', window=len(est_row), twin=True)
     plot(figure, 212, raw2, 'green', window=len(raw2), twin=True)
 
 
@@ -78,7 +82,7 @@ def get_accuracy(estimate, truth, interval=5):
         if i % interval == 0:
             checks += 1
             successes += 1 if estimate[i] == truth[i] else 0
-    return successes * 100.0 / checks
+    return successes * 100.0 / checks if checks != 0 else 1
 
 
 def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
