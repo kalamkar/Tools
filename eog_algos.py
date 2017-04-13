@@ -72,7 +72,7 @@ def show(columns, figure):
           % (get_accuracy(levels1, col), get_accuracy(levels2, row))
 
     plot(figure, 211, channel1, 'blue', window=len(channel1))
-    plot(figure, 211, jfiltered1, 'lightblue', window=len(jfiltered1))
+    # plot(figure, 211, jfiltered1, 'lightblue', window=len(jfiltered1))
     # plot(figure, 211, markers11, 'orange', window=len(markers11))
     # plot(figure, 211, markers12, 'yellow', window=len(markers12))
     plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
@@ -80,7 +80,7 @@ def show(columns, figure):
     # plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
 
     plot(figure, 212, channel2, 'green', window=len(channel2))
-    plot(figure, 212, jfiltered2, 'lightgreen', window=len(jfiltered2))
+    # plot(figure, 212, jfiltered2, 'lightgreen', window=len(jfiltered2))
     # plot(figure, 212, markers21, 'orange', window=len(markers21))
     # plot(figure, 212, markers22, 'yellow', window=len(markers22))
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
@@ -102,51 +102,51 @@ def process(horizontal, vertical, remove_blinks=True):
     h_filtered = []
     v_filtered = []
 
-    h_drift = FixedWindowSlopeRemover()
-    v_drift = FixedWindowSlopeRemover()
+    h_drift1 = FixedWindowSlopeRemover()
+    v_drift1 = FixedWindowSlopeRemover()
 
     h_drift2 = WeightedWindowDriftRemover()
     v_drift2 = WeightedWindowDriftRemover()
 
-    h_baseline = SlopeFeatureTracker()
-    v_baseline = SlopeFeatureTracker()
+    h_features = SlopeFeaturePassthrough()
+    v_features = SlopeFeaturePassthrough()
 
     blink_detector = BlinkDetector()
 
-    h_minmax = FeatureBasedMinMaxTracker()
-    v_minmax = FeatureBasedMinMaxTracker()
+    h_calibration = DriftingMedianCalibration()
+    v_calibration = DriftingMedianCalibration()
 
     for i in range(0, len(horizontal)):
         h_raw = horizontal[i]
         v_raw = vertical[i]
 
-        h_value = h_drift.update(h_raw)
-        v_value = v_drift.update(v_raw)
+        h_value = h_drift1.update(h_raw)
+        v_value = v_drift1.update(v_raw)
 
         h_value = h_drift2.update(h_value)
         v_value = v_drift2.update(v_value)
 
-        h_value -= h_baseline.update(h_value)
-        v_value -= v_baseline.update(v_value)
+        h_value = h_features.update(h_value)
+        v_value = v_features.update(v_value)
 
         if blink_detector.check(v_value) and remove_blinks:
-            h_drift.remove_spike(blink_detector.blink_window_size)
-            v_drift.remove_spike(blink_detector.blink_window_size)
+            h_drift1.remove_spike(blink_detector.blink_window_size)
+            v_drift1.remove_spike(blink_detector.blink_window_size)
             h_drift2.remove_spike(blink_detector.blink_window_size)
             v_drift2.remove_spike(blink_detector.blink_window_size)
             remove_spike(h_filtered, blink_detector.blink_window_size)
             remove_spike(v_filtered, blink_detector.blink_window_size)
-            h_minmax.remove_spike(blink_detector.blink_window_size)
-            v_minmax.remove_spike(blink_detector.blink_window_size)
+            h_calibration.remove_spike(blink_detector.blink_window_size)
+            v_calibration.remove_spike(blink_detector.blink_window_size)
 
-        h_minmax.update(h_value)
-        v_minmax.update(v_value)
+        h_calibration.update(h_value)
+        v_calibration.update(v_value)
 
         h_filtered.append(h_value)
         v_filtered.append(v_value)
 
-    return [h_filtered, h_minmax.levels, h_minmax.mins, h_minmax.maxs, blink_detector.blink_indices], \
-           [v_filtered, v_minmax.levels, v_minmax.mins, v_minmax.maxs, blink_detector.blink_indices]
+    return [h_filtered, h_calibration.levels, h_calibration.mins, h_calibration.maxs, blink_detector.blink_indices], \
+           [v_filtered, v_calibration.levels, v_calibration.mins, v_calibration.maxs, blink_detector.blink_indices]
 
 
 class FixedWindowSlopeRemover:
@@ -171,7 +171,7 @@ class FixedWindowSlopeRemover:
         remove_spike(self.drift_window, size)
 
 
-class SlopeFeatureTracker:
+class SlopeFeaturePassthrough:
     def __init__(self, slope_window_size=5, threshold_multiplier=2, threshold_update_interval=500):
         self.slope_window_size = slope_window_size
         self.threshold_update_interval = threshold_update_interval
@@ -205,7 +205,7 @@ class SlopeFeatureTracker:
         else:
             self.features.append(0)
 
-        return value - self.latest_feature_value
+        return self.latest_feature_value
 
 
 class FixedWindowMinMaxTracker:
@@ -244,7 +244,7 @@ class FixedWindowMinMaxTracker:
         remove_spike(self.window, size)
 
 
-class FeatureBasedMinMaxTracker:
+class DriftingMedianCalibration:
     def __init__(self, window_size=1000, num_steps=5):
         self.num_steps = num_steps
         self.window_size = window_size
