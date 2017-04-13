@@ -33,6 +33,9 @@ def show(columns, figure):
     col = np.array(columns[6][1:]).astype(np.int)
     row = np.array(columns[7][1:]).astype(np.int)
 
+    jfiltered1 = np.array(columns[2][1:]).astype(np.int)
+    jfiltered2 = np.array(columns[3][1:]).astype(np.int)
+
     raw1 = np.array(columns[0][1:]).astype(np.int)
     raw2 = np.array(columns[1][1:]).astype(np.int)
 
@@ -40,7 +43,7 @@ def show(columns, figure):
     [filtered2, levels2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
     slice_start = 6000
-    slice_end = len(raw1) - 50
+    slice_end = len(raw1) - 500
 
     blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2] # Hack
     blink_points2 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2]
@@ -56,6 +59,9 @@ def show(columns, figure):
     channel1 = filtered1[slice_start:slice_end]
     channel2 = filtered2[slice_start:slice_end]
 
+    jfiltered1 = jfiltered1[slice_start:slice_end]
+    jfiltered2 = jfiltered2[slice_start:slice_end]
+
     row = [4 - x for x in row[slice_start:slice_end]]
     col = [4 - x for x in col[slice_start:slice_end]]
 
@@ -65,19 +71,21 @@ def show(columns, figure):
     print 'Accuracy for Horizontal is %.2f%% and Vertical is %.2f%%' \
           % (get_accuracy(levels1, col), get_accuracy(levels2, row))
 
-    # plot(figure, 211, channel1, 'blue', window=len(channel1))
+    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    plot(figure, 211, jfiltered1, 'lightblue', window=len(jfiltered1))
     # plot(figure, 211, markers11, 'orange', window=len(markers11))
     # plot(figure, 211, markers12, 'yellow', window=len(markers12))
     plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
-    plot(figure, 211, col, 'lightblue', window=len(col), twin=True)
-    plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
+    plot(figure, 211, col, 'orange', window=len(col), twin=True)
+    # plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
 
-    # plot(figure, 212, channel2, 'green', window=len(channel2))
+    plot(figure, 212, channel2, 'green', window=len(channel2))
+    plot(figure, 212, jfiltered2, 'lightgreen', window=len(jfiltered2))
     # plot(figure, 212, markers21, 'orange', window=len(markers21))
     # plot(figure, 212, markers22, 'yellow', window=len(markers22))
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
-    plot(figure, 212, row, 'lightgreen', window=len(row), twin=True)
-    plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
+    plot(figure, 212, row, 'orange', window=len(row), twin=True)
+    # plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
 
 
 def get_accuracy(estimate, truth, interval=5):
@@ -100,8 +108,8 @@ def process(horizontal, vertical, remove_blinks=True):
     h_drift2 = WeightedWindowDriftRemover()
     v_drift2 = WeightedWindowDriftRemover()
 
-    h_feature_tracker = SlopeFeatureTracker()
-    v_feature_tracker = SlopeFeatureTracker()
+    h_baseline = SlopeFeatureTracker()
+    v_baseline = SlopeFeatureTracker()
 
     blink_detector = BlinkDetector()
 
@@ -118,8 +126,8 @@ def process(horizontal, vertical, remove_blinks=True):
         h_value = h_drift2.update(h_value)
         v_value = v_drift2.update(v_value)
 
-        h_value = h_value - h_feature_tracker.update(h_value)
-        v_value = v_value - v_feature_tracker.update(v_value)
+        h_value -= h_baseline.update(h_value)
+        v_value -= v_baseline.update(v_value)
 
         if blink_detector.check(v_value) and remove_blinks:
             h_drift.remove_spike(blink_detector.blink_window_size)
@@ -171,11 +179,10 @@ class SlopeFeatureTracker:
         self.threshold = threshold_multiplier
         self.threshold_multiplier = threshold_multiplier
         self.features = []
-        self.baseline = [0] * slope_window_size
         self.thresholds = []
         self.threshold_window = []
 
-        self.feature_adjustment = 0
+        self.latest_feature_value = 0
         self.update_count = 0
 
     def update(self, value):
@@ -188,21 +195,17 @@ class SlopeFeatureTracker:
         self.threshold_window.append(slope)
         if self.update_count % self.threshold_update_interval == 0:
             self.threshold = np.std(self.threshold_window) * self.threshold_multiplier
-            # drift = get_slope(self.drift_window)
-            # if abs(drift) > 0:
-            #     self.threshold = math.log10(abs(drift)) * self.threshold_multiplier
             self.threshold_window = []
 
         self.thresholds.append(self.threshold)
 
         if abs(slope) > abs(self.threshold):
             self.features.append(slope)
-            self.feature_adjustment = value - self.baseline[0]
+            self.latest_feature_value = value
         else:
             self.features.append(0)
 
-        self.baseline.append(value - self.feature_adjustment)
-        return self.baseline[-1]
+        return value - self.latest_feature_value
 
 
 class FixedWindowMinMaxTracker:
