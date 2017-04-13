@@ -102,6 +102,9 @@ def process(horizontal, vertical, remove_blinks=True):
     h_filtered = []
     v_filtered = []
 
+    h_poly_fit = CurveFitDriftRemover()
+    v_poly_fit = CurveFitDriftRemover()
+
     h_drift1 = FixedWindowSlopeRemover()
     v_drift1 = FixedWindowSlopeRemover()
 
@@ -123,8 +126,11 @@ def process(horizontal, vertical, remove_blinks=True):
         h_value = h_drift1.update(h_raw)
         v_value = v_drift1.update(v_raw)
 
-        h_value = h_drift2.update(h_value)
-        v_value = v_drift2.update(v_value)
+        # h_value = h_drift2.update(h_value)
+        # v_value = v_drift2.update(v_value)
+
+        h_value = h_poly_fit.update(h_value)
+        v_value = v_poly_fit.update(v_value)
 
         h_value = h_features.update(h_value)
         v_value = v_features.update(v_value)
@@ -171,6 +177,32 @@ class FixedWindowSlopeRemover:
         remove_spike(self.drift_window, size)
 
 
+class CurveFitDriftRemover:
+    def __init__(self, window_size=500, function_calculate_interval=5):
+        self.window_size = window_size
+        self.window = [0] * window_size
+        self.poly_function = None
+        self.function_calculate_interval = function_calculate_interval
+        self.function_interval_count = function_calculate_interval - 1
+        self.update_count = 0
+
+    def update(self, raw):
+        self.update_count += 1
+        self.window = self.window[1:]
+        self.window.append(raw)
+
+        self.function_interval_count += 1
+        if self.function_interval_count == self.function_calculate_interval:
+            self.poly_function = get_curve(self.window, down_sample_factor=30)
+            self.function_interval_count = 0
+
+        x = len(self.window) + self.function_interval_count
+        return raw - int(np.polyval(self.poly_function, x))
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
+
+
 class SlopeFeaturePassthrough:
     def __init__(self, slope_window_size=5, threshold_multiplier=2, threshold_update_interval=500):
         self.slope_window_size = slope_window_size
@@ -208,7 +240,7 @@ class SlopeFeaturePassthrough:
         return self.latest_feature_value
 
 
-class FixedWindowMinMaxTracker:
+class FixedWindowCalibration:
     def __init__(self, window_size=500, num_steps=5):
         self.num_steps = num_steps
         self.window_size = window_size
@@ -426,6 +458,16 @@ def get_level(value, min_value, max_value, num_steps):
     size = (max_value - min_value) / num_steps
     value = max(min_value, min(max_value, value))
     return int((value - min_value) / size) if size > 0 else 0
+
+
+def get_curve(data, degree=2, down_sample_factor=30):
+    x = []
+    y = []
+    for i in range(0, len(data)):
+        if i % down_sample_factor == 0:
+            x.append(i)
+            y.append(data[i])
+    return np.polyfit(x, y, degree)
 
 
 def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):

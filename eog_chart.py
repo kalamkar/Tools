@@ -9,7 +9,6 @@ import sys
 import math
 import numpy as np
 import time
-import scipy.signal
 import scipy.stats
 from matplotlib import pyplot
 
@@ -44,10 +43,7 @@ def show(columns, figure):
     row = np.array(columns[7][1:]).astype(np.int)
 
     slice_start = 6000
-    slice_end = len(raw1) - 500
-
-    # raw1 = scipy.signal.detrend(raw1)
-    # raw2 = scipy.signal.detrend(raw2)
+    slice_end = len(raw1) - 512
 
     raw1 = raw1[slice_start:slice_end]
     raw2 = raw2[slice_start:slice_end]
