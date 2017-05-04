@@ -10,7 +10,9 @@ import math
 import numpy as np
 import time
 import scipy.stats
+import scipy.signal
 from matplotlib import pyplot
+from common import plot
 
 SAMPLING_RATE = 51.2
 MIN_BLINK_HEIGHT = 10000
@@ -22,14 +24,20 @@ def main():
 
     figure = pyplot.figure(figsize=(15, 10))
 
-    start = time.time()
-    show(columns, figure)
-    print 'Processing took %d seconds' % (time.time() - start)
+    start = 1
+    end = -1
+    if len(sys.argv) > 3:
+        start = int(sys.argv[2])
+        end = int(sys.argv[3])
+
+    start_time = time.time()
+    show(columns, figure, start, end)
+    print 'Processing took %d seconds' % (time.time() - start_time)
 
     pyplot.show()
 
 
-def show(columns, figure):
+def show(columns, figure, start, end):
     col = np.array(columns[6][1:]).astype(np.int)
     row = np.array(columns[7][1:]).astype(np.int)
 
@@ -42,50 +50,55 @@ def show(columns, figure):
     [filtered1, levels1, markers11, markers12, blink_points1], \
     [filtered2, levels2, markers21, markers22, blink_points2] = process(raw1, raw2)
 
-    slice_start = 6000
-    slice_end = len(raw1) - 500
+    raw1 = scipy.signal.detrend(raw1)
+    raw2 = scipy.signal.detrend(raw2)
 
-    blink_points1 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2] # Hack
-    blink_points2 = [i - slice_start if slice_start <= i < slice_end else 0 for i in blink_points2]
-    blink_values1 = [filtered1[i + slice_start] for i in blink_points1]
-    blink_values2 = [filtered2[i + slice_start] for i in blink_points2]
+    raw1 = raw1[start:end]
+    raw2 = raw2[start:end]
 
-    markers11 = markers11[slice_start:slice_end]
-    markers21 = markers21[slice_start:slice_end]
+    blink_points1 = [i - start if start <= i < end else 0 for i in blink_points2]
+    blink_points2 = [i - start if start <= i < end else 0 for i in blink_points2]
+    blink_values1 = [filtered1[i + start] for i in blink_points1]
+    blink_values2 = [filtered2[i + start] for i in blink_points2]
 
-    markers12 = markers12[slice_start:slice_end]
-    markers22 = markers22[slice_start:slice_end]
+    markers11 = markers11[start:end]
+    markers21 = markers21[start:end]
 
-    channel1 = filtered1[slice_start:slice_end]
-    channel2 = filtered2[slice_start:slice_end]
+    markers12 = markers12[start:end]
+    markers22 = markers22[start:end]
 
-    jfiltered1 = jfiltered1[slice_start:slice_end]
-    jfiltered2 = jfiltered2[slice_start:slice_end]
+    channel1 = filtered1[start:end]
+    channel2 = filtered2[start:end]
 
-    row = [4 - x for x in row[slice_start:slice_end]]
-    col = [4 - x for x in col[slice_start:slice_end]]
+    jfiltered1 = jfiltered1[start:end]
+    jfiltered2 = jfiltered2[start:end]
 
-    levels1 = levels1[slice_start:slice_end]
-    levels2 = levels2[slice_start:slice_end]
+    row = [4 - x for x in row[start:end]]
+    col = [4 - x for x in col[start:end]]
+
+    levels1 = levels1[start:end]
+    levels2 = levels2[start:end]
 
     print 'Accuracy for Horizontal is %.2f%% and Vertical is %.2f%%' \
           % (get_accuracy(levels1, col), get_accuracy(levels2, row))
 
-    plot(figure, 211, channel1, 'blue', window=len(channel1))
     # plot(figure, 211, jfiltered1, 'lightblue', window=len(jfiltered1))
-    # plot(figure, 211, markers11, 'orange', window=len(markers11))
-    # plot(figure, 211, markers12, 'yellow', window=len(markers12))
+    plot(figure, 211, channel1, 'blue', window=len(channel1))
+    # plot(figure, 211, markers11, 'yellow', window=len(markers11), twin=True)
+    # plot(figure, 211, markers12, 'orange', window=len(markers12), twin=True)
     plot(figure, 211, blink_values1, 'red', x=blink_points1, window=len(channel1))
-    plot(figure, 211, col, 'orange', window=len(col), twin=True)
-    # plot(figure, 211, levels1, 'red', window=len(levels1), twin=True)
+    # plot(figure, 211, col, 'orange', window=len(col), twin=True)
+    # plot(figure, 211, levels1, 'lightblue', window=len(levels1), twin=True)
+    plot(figure, 211, raw1, 'lightblue', window=len(raw1), twin=True)
 
-    plot(figure, 212, channel2, 'green', window=len(channel2))
     # plot(figure, 212, jfiltered2, 'lightgreen', window=len(jfiltered2))
-    # plot(figure, 212, markers21, 'orange', window=len(markers21))
-    # plot(figure, 212, markers22, 'yellow', window=len(markers22))
+    plot(figure, 212, channel2, 'green', window=len(channel2))
+    # plot(figure, 212, markers21, 'yellow', window=len(markers21), twin=True)
+    # plot(figure, 212, markers22, 'orange', window=len(markers22), twin=True)
     plot(figure, 212, blink_values2, 'red', x=blink_points2, window=len(channel2))
-    plot(figure, 212, row, 'orange', window=len(row), twin=True)
-    # plot(figure, 212, levels2, 'red', window=len(levels2), twin=True)
+    # plot(figure, 212, row, 'orange', window=len(row), twin=True)
+    # plot(figure, 212, levels2, 'lightgreen', window=len(levels2), twin=True)
+    plot(figure, 212, raw2, 'lightgreen', window=len(raw2), twin=True)
 
 
 def get_accuracy(estimate, truth, interval=5):
@@ -98,52 +111,70 @@ def get_accuracy(estimate, truth, interval=5):
     return successes * 100.0 / checks
 
 
-def process(horizontal, vertical, remove_blinks=True):
+def process(horizontal, vertical):
     h_filtered = []
     v_filtered = []
 
-    h_poly_fit = CurveFitDriftRemover()
-    v_poly_fit = CurveFitDriftRemover()
+    filters = []
 
-    h_drift1 = FixedWindowSlopeRemover()
-    v_drift1 = FixedWindowSlopeRemover()
+    h_drift1 = FixedWindowSlopeRemover(drift_window_size=1024)
+    v_drift1 = FixedWindowSlopeRemover(drift_window_size=1024)
+    filters.extend([h_drift1, v_drift1])
 
-    h_drift2 = WeightedWindowDriftRemover()
-    v_drift2 = WeightedWindowDriftRemover()
+    h_drift2 = FixedWindowSlopeRemover(drift_window_size=512)
+    v_drift2 = FixedWindowSlopeRemover(drift_window_size=512)
+    filters.extend([h_drift2, v_drift2])
 
-    h_features = SlopeFeaturePassthrough()
-    v_features = SlopeFeaturePassthrough()
+    # h_baseline = FeatureIntervalCurveFitDriftRemover(window_size=512)
+    # v_baseline = FeatureIntervalCurveFitDriftRemover(window_size=512)
+    # filters.extend([h_baseline, v_baseline])
+
+    h_baseline = ValueChangeCurveFitDriftRemover(window_size=512)
+    v_baseline = ValueChangeCurveFitDriftRemover(window_size=512)
+    filters.extend([h_baseline, v_baseline])
+
+    # h_baseline = BaselineFollower()
+    # v_baseline = BaselineFollower()
+    # filters.extend([h_baseline, v_baseline])
+
+    h_features = SlopeFeatureValuePassthrough()
+    v_features = SlopeFeatureValuePassthrough()
+    filters.extend([h_features, v_features])
+
+    h_drift3 = FixedIntervalDriftRemoval()
+    v_drift3 = FixedIntervalDriftRemoval()
+    filters.extend([h_drift3, v_drift3])
 
     blink_detector = BlinkDetector()
 
-    h_calibration = DriftingMedianCalibration()
-    v_calibration = DriftingMedianCalibration()
+    h_calibration = FixedRangeCalibration()
+    v_calibration = FixedRangeCalibration()
+    filters.extend([h_calibration, v_calibration])
 
     for i in range(0, len(horizontal)):
-        h_raw = horizontal[i]
-        v_raw = vertical[i]
+        if blink_detector.check(vertical[i]):
+            remove_spike(h_filtered, blink_detector.blink_window_size)
+            remove_spike(v_filtered, blink_detector.blink_window_size)
+            for f in filters:
+                f.remove_spike(blink_detector.blink_window_size)
 
-        h_value = h_drift1.update(h_raw)
-        v_value = v_drift1.update(v_raw)
+        h_value = horizontal[i]
+        v_value = vertical[i]
+
+        h_value = h_drift1.update(h_value)
+        v_value = v_drift1.update(v_value)
 
         # h_value = h_drift2.update(h_value)
         # v_value = v_drift2.update(v_value)
 
-        h_value = h_poly_fit.update(h_value)
-        v_value = v_poly_fit.update(v_value)
-
         h_value = h_features.update(h_value)
         v_value = v_features.update(v_value)
 
-        if blink_detector.check(v_value) and remove_blinks:
-            h_drift1.remove_spike(blink_detector.blink_window_size)
-            v_drift1.remove_spike(blink_detector.blink_window_size)
-            h_drift2.remove_spike(blink_detector.blink_window_size)
-            v_drift2.remove_spike(blink_detector.blink_window_size)
-            remove_spike(h_filtered, blink_detector.blink_window_size)
-            remove_spike(v_filtered, blink_detector.blink_window_size)
-            h_calibration.remove_spike(blink_detector.blink_window_size)
-            v_calibration.remove_spike(blink_detector.blink_window_size)
+        h_value = h_baseline.update(h_value)
+        v_value = v_baseline.update(v_value)
+
+        # h_value = h_drift3.update(h_value)
+        # v_value = v_drift3.update(v_value)
 
         h_calibration.update(h_value)
         v_calibration.update(v_value)
@@ -151,8 +182,8 @@ def process(horizontal, vertical, remove_blinks=True):
         h_filtered.append(h_value)
         v_filtered.append(v_value)
 
-    return [h_filtered, h_calibration.levels, h_calibration.mins, h_calibration.maxs, blink_detector.blink_indices], \
-           [v_filtered, v_calibration.levels, v_calibration.mins, v_calibration.maxs, blink_detector.blink_indices]
+    return [h_filtered, h_calibration.levels, h_baseline.features, h_baseline.baseline, blink_detector.blink_indices], \
+           [v_filtered, v_calibration.levels, v_baseline.features, v_baseline.baseline, blink_detector.blink_indices]
 
 
 class FixedWindowSlopeRemover:
@@ -203,7 +234,91 @@ class CurveFitDriftRemover:
         remove_spike(self.window, size)
 
 
-class SlopeFeaturePassthrough:
+class FeatureIntervalCurveFitDriftRemover:
+    def __init__(self, slope_window_size=5, window_size=512, threshold_multiplier=2, threshold_update_interval=512):
+        self.slope_window = [0] * slope_window_size
+
+        self.window = [0] * window_size
+        self.poly_function = None
+
+        self.threshold_update_interval = threshold_update_interval
+        self.threshold = threshold_multiplier
+        self.threshold_multiplier = threshold_multiplier
+        self.threshold_window = []
+
+        self.update_count = 0
+
+        self.count_since_new_curve = 0
+
+        self.baseline = []
+        self.features = []
+
+    def update(self, value):
+        self.update_count += 1
+
+        self.slope_window = self.slope_window[1:]
+        self.slope_window.append(value)
+        slope = get_slope(self.slope_window)
+
+        self.window = self.window[1:]
+        self.window.append(value)
+
+        self.threshold_window.append(slope)
+        if self.update_count % self.threshold_update_interval == 0:
+            self.threshold = np.std(self.threshold_window) * self.threshold_multiplier
+            self.threshold_window = []
+
+        if abs(slope) > abs(self.threshold):
+            self.poly_function = get_curve(self.window, down_sample_factor=30)
+            self.count_since_new_curve = 0
+            self.features.append(slope)
+        else:
+            self.features.append(0)
+
+        self.count_since_new_curve += 1
+        x = len(self.window) + self.count_since_new_curve
+        self.baseline.append(int(np.polyval(self.poly_function, x)))
+        return value - self.baseline[-1]
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
+
+
+class ValueChangeCurveFitDriftRemover:
+    def __init__(self, slope_window_size=5, window_size=512):
+        self.slope_window = [0] * slope_window_size
+
+        self.window = [0] * window_size
+        self.poly_function = None
+
+        self.baseline = [0]
+        self.features = []
+
+    def update(self, value):
+        self.slope_window = self.slope_window[1:]
+        self.slope_window.append(value)
+        slope = get_slope(self.slope_window)
+
+        self.window = self.window[1:]
+        self.window.append(value)
+
+        if self.slope_window[-1] != self.slope_window[-2]:
+            self.poly_function = get_curve(self.window, down_sample_factor=30)
+            self.features.append(slope)
+
+            x = len(self.window) + 1
+            self.baseline.append(int(np.polyval(self.poly_function, x)))
+        else:
+            self.features.append(0)
+            self.baseline.append(self.baseline[-1])
+
+        return value - self.baseline[-1]
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
+
+
+class SlopeFeatureValuePassthrough:
     def __init__(self, slope_window_size=5, threshold_multiplier=2, threshold_update_interval=500):
         self.slope_window_size = slope_window_size
         self.threshold_update_interval = threshold_update_interval
@@ -239,16 +354,121 @@ class SlopeFeaturePassthrough:
 
         return self.latest_feature_value
 
+    def remove_spike(self, size):
+        pass
 
-class FixedWindowCalibration:
-    def __init__(self, window_size=500, num_steps=5):
+
+class BaselineFollower:
+    def __init__(self, slope_window_size=5, drift_window_size=100,
+                 threshold_multiplier=2, threshold_update_interval=500):
+        self.slope_window = [0] * slope_window_size
+
+        self.drift_window = [0] * drift_window_size
+
+        self.threshold_update_interval = threshold_update_interval
+        self.threshold = threshold_multiplier
+        self.threshold_multiplier = threshold_multiplier
+        self.threshold_window = []
+
+        self.features = []
+        self.thresholds = []
+        self.baseline = []
+
+        self.update_count = 0
+        self.adjustment = 0
+        self.adjustment_window = 0
+
+    def update(self, value):
+        self.update_count += 1
+
+        self.slope_window = self.slope_window[1:]
+        self.slope_window.append(value)
+        slope = get_slope(self.slope_window)
+
+        self.drift_window = self.drift_window[1:]
+        self.drift_window.append(value)
+        drift = get_slope(self.drift_window)
+
+        self.threshold_window.append(slope)
+        if self.update_count % self.threshold_update_interval == 0:
+            self.threshold = np.std(self.threshold_window) * self.threshold_multiplier
+            self.threshold_window = []
+
+        self.thresholds.append(self.threshold)
+
+        if abs(slope) > abs(self.threshold):
+            self.features.append(slope)
+            self.adjustment_window = len(self.slope_window)
+        else:
+            self.features.append(0)
+
+        if self.adjustment_window > 0:
+            self.adjustment -= slope
+            self.adjustment_window -= 1
+
+        self.baseline.append(value - self.adjustment)
+        previous = self.baseline[-2] if len(self.baseline) > 1 else 0
+        return previous - value
+
+    def remove_spike(self, size):
+        pass
+
+
+class FixedIntervalDriftRemoval:
+    def __init__(self, window_size=500):
+        self.window = [0] * window_size
+        self.cumulative_drift = 0
+
+        self.current_base = 0
+        self.new_base = 0
+
+        self.count_since_update = 0
+
+        self.baseline = []
+
+    def update(self, value):
+        self.window = self.window[1:]
+        self.window.append(value)
+
+        drift = get_slope(self.window)
+
+        if self.count_since_update % len(self.window) == 0:
+            median = np.median(self.window)
+            self.new_base = median + (len(self.window) / 2) * drift
+
+            # min_value, min_index, max_value, max_index = get_min_max(self.window)
+            # min_value += (len(self.window) - min_index) * drift
+            # max_value += (len(self.window) - max_index) * drift
+            # self.new_base = ((min_value + max_value) / 2)
+
+            self.count_since_update = 0
+            self.cumulative_drift = 0
+
+        self.count_since_update += 1
+        if self.window[-1] != self.window[-2]:
+            self.current_base = self.new_base
+            self.current_base += self.cumulative_drift
+            self.cumulative_drift = 0
+        else:
+            self.cumulative_drift += drift
+
+        self.baseline.append(self.current_base)
+        return value - self.current_base
+
+    def remove_spike(self, size):
+        remove_spike(self.window, size)
+
+
+class StandardDeviationCalibration:
+    def __init__(self, window_size=500, num_steps=5, calibration_factor=3):
         self.num_steps = num_steps
-        self.window_size = window_size
-        self.window = []
-        self.current_drift = 0
+        self.window = [0] * window_size
+        self.calibration_factor = calibration_factor
 
         self.current_min = 0
         self.current_max = 0
+
+        self.count_since_update = 0
 
         self.maxs = []
         self.mins = []
@@ -256,16 +476,88 @@ class FixedWindowCalibration:
         self.levels = []
 
     def update(self, value):
+        self.window = self.window[1:]
         self.window.append(value)
 
-        if len(self.window) == self.window_size:
-            self.current_drift = get_slope(self.window)
+        if self.count_since_update % len(self.window) == 0:
             stddev = np.std(self.window)
-
             median = np.median(self.window)
-            self.current_min = median + (len(self.window) / 2) * self.current_drift - (3 * stddev)
-            self.current_max = median + (len(self.window) / 2) * self.current_drift + (3 * stddev)
-            self.window = []
+            self.current_min = median - (self.calibration_factor * stddev)
+            self.current_max = median + (self.calibration_factor * stddev)
+            self.count_since_update = 0
+
+        self.count_since_update += 1
+
+        self.mins.append(self.current_min)
+        self.maxs.append(self.current_max)
+
+        self.levels.append(get_level(value, self.current_min, self.current_max, self.num_steps))
+
+    def remove_spike(self, size):
+        pass
+
+
+class FixedRangeCalibration:
+    def __init__(self, num_steps=5, calibration_range=15000):
+        self.num_steps = num_steps
+
+        self.current_min = - (calibration_range / 2)
+        self.current_max = calibration_range / 2
+
+        self.maxs = []
+        self.mins = []
+
+        self.levels = []
+
+    def update(self, value):
+        self.mins.append(self.current_min)
+        self.maxs.append(self.current_max)
+
+        self.levels.append(get_level(value, self.current_min, self.current_max, self.num_steps))
+
+    def remove_spike(self, size):
+        pass
+
+
+class FixedIntervalCalibration:
+    def __init__(self, window_size=500, num_steps=5):
+        self.num_steps = num_steps
+        self.window = [0] * window_size
+        self.cumulative_drift = 0
+
+        self.current_min = 0
+        self.current_max = 0
+
+        self.count_since_update = 0
+
+        self.maxs = []
+        self.mins = []
+
+        self.levels = []
+
+    def update(self, value):
+        self.window = self.window[1:]
+        self.window.append(value)
+
+        drift = get_slope(self.window)
+
+        if self.count_since_update % len(self.window) == 0:
+            stddev = np.std(self.window)
+            median = np.median(self.window)
+            # self.current_min = median + (len(self.window) / 2) * drift - (3 * stddev)
+            # self.current_max = median + (len(self.window) / 2) * drift + (3 * stddev)
+            self.current_min = median + (len(self.window) / 2) * drift - 10000
+            self.current_max = median + (len(self.window) / 2) * drift + 10000
+
+            self.count_since_update = 0
+
+        self.count_since_update += 1
+        if self.window[-1] != self.window[-2]:
+            self.current_min += self.cumulative_drift
+            self.current_max += self.cumulative_drift
+            self.cumulative_drift = 0
+        else:
+            self.cumulative_drift += drift
 
         self.mins.append(self.current_min)
         self.maxs.append(self.current_max)
@@ -299,17 +591,23 @@ class DriftingMedianCalibration:
         self.window = self.window[1:]
         self.window.append(value)
 
+        self.current_drift = get_slope(self.window)
+
         if value != self.window[-2]:
-            self.current_drift = 0  # get_slope(self.window)
             stddev = np.std(self.window)
 
-            median = 0  # np.median(self.window)
-            self.current_min = median + (self.count_since_update / 2) * self.current_drift - (3 * stddev)
-            self.current_max = median + (self.count_since_update / 2) * self.current_drift + (3 * stddev)
+            median = np.median(self.window)
+            # self.current_min = median + (self.count_since_update / 2) * self.current_drift - (3 * stddev)
+            # self.current_max = median + (self.count_since_update / 2) * self.current_drift + (3 * stddev)
+            self.current_min = median + (self.count_since_update / 2) * self.current_drift - 8000
+            self.current_max = median + (self.count_since_update / 2) * self.current_drift + 8000
 
             self.count_since_update = 0
         else:
             self.count_since_update += 1
+
+        self.current_min -= self.current_drift
+        self.current_max -= self.current_drift
 
         self.mins.append(self.current_min)
         self.maxs.append(self.current_max)
@@ -321,7 +619,7 @@ class DriftingMedianCalibration:
 
 
 class BlinkDetector:
-    def __init__(self, blink_window_size=50):
+    def __init__(self, blink_window_size=50, drift_window_size=500):
         self.blink_window_size = blink_window_size
         self.blink_indices = []
 
@@ -330,8 +628,22 @@ class BlinkDetector:
 
         self.update_count = 0
 
-    def check(self, flattened):
+        self.drift_window_size = drift_window_size
+        self.drift_window = []
+        self.current_drift = 0
+        self.adjustment = 0
+
+    def check(self, raw):
         self.update_count += 1
+
+        self.drift_window.append(raw)
+        if len(self.drift_window) == self.drift_window_size:
+            previous_drift = self.current_drift
+            self.current_drift = get_slope(self.drift_window)
+            self.adjustment -= self.drift_window_size * previous_drift
+            self.drift_window = []
+
+        flattened = raw - (len(self.drift_window) * self.current_drift) + self.adjustment
 
         self.blink_window = self.blink_window[1:]
         self.blink_window.append(flattened)
@@ -456,8 +768,8 @@ def remove_spike(data, size):
 
 def get_level(value, min_value, max_value, num_steps):
     size = (max_value - min_value) / num_steps
-    value = max(min_value, min(max_value, value))
-    return int((value - min_value) / size) if size > 0 else 0
+    value = max(min_value, min(max_value - 1, value))
+    return math.floor((value - min_value) / size) if size > 0 else 0
 
 
 def get_curve(data, degree=2, down_sample_factor=30):
@@ -468,28 +780,6 @@ def get_curve(data, degree=2, down_sample_factor=30):
             x.append(i)
             y.append(data[i])
     return np.polyfit(x, y, degree)
-
-
-def plot(figure, row_col, data, color, x=[], max_y=0, min_y=-1, start=0, twin=False, window=SAMPLING_RATE * 60):
-    if len(data) == 0:
-        return
-
-    chart = figure.add_subplot(row_col)
-    if twin:
-        chart = chart.twinx()
-    chart.set_xticks(np.arange(0, len(data), window / 15))
-    if len(x) == 0:
-        chart.plot(data, linewidth=1, color=color)
-    else:
-        chart.scatter(x, data, linewidth=1, color=color)
-    chart.set_xbound([start, start + window])
-    if max_y and min_y == -1:
-        chart.set_ybound([-max_y, max_y])
-    elif max_y:
-        chart.set_ybound([min_y, max_y])
-
-    chart.margins(0.0, 0.05)
-    chart.grid(not twin)
 
 
 if __name__ == "__main__":
